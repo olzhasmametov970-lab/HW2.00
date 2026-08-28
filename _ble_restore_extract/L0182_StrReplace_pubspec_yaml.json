@@ -1,0 +1,5 @@
+{
+  "new_string": "flutter:\n  uses-material-design: true\n  assets:\n    - assets/fonts/NotoSans-Regular.ttf\n    - assets/fonts/NotoSans-Bold.ttf\n",
+  "old_string": "flutter:\n  uses-material-design: true\n",
+  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\pubspec.yaml"
+}

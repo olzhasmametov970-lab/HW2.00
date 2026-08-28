@@ -1,0 +1,7 @@
+# API подписывается на всю телеметрию
+user hydrowin-api
+topic read hydrowin/telemetry/#
+
+# Платы публикуют только в hydrowin/telemetry/#
+user hydrowin-device
+topic write hydrowin/telemetry/#

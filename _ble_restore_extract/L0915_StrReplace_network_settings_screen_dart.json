@@ -1,0 +1,5 @@
+{
+  "new_string": "      final settings = await scope.networkSettings.load();\n      final dev = scope.developerSettings.load();",
+  "old_string": "      final settings = scope.networkSettings.load();\n      final dev = scope.developerSettings.load();",
+  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\lib\\features\\settings\\network_settings_screen.dart"
+}

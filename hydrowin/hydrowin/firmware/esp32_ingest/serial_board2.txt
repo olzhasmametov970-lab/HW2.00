@@ -1,0 +1,54 @@
+MACHINE 2253cd6d-2804-49a4-9bb4-8b4d0083eea2
+DEVICE ESP32-HYDRO-02
+KEY LBlcJ4kPTLA5HVdYQzfH0WhQo07Dz59VynmLtYECY1M
+CFG
+
+
+
+
+
+для удаления
+ssh hydrowin@192.168.1.57 "cd ~/hydrowin-backend && docker compose exec -T api python - <<'PY'
+from app.database import SessionLocal
+from app.models import Machine
+db = SessionLocal()
+try:
+    for m in db.query(Machine).order_by(Machine.code).all():
+        print(f'{m.id} | {m.code} | {m.name}')
+finally:
+    db.close()
+PY"
+
+
+ssh hydrowin@192.168.1.57 "cd ~/hydrowin-backend && docker compose exec -T api python - <<'PY'
+from app.database import SessionLocal
+from app.models import Machine, User, Reading, ReadingHourly, ReadingDaily, Event, Device, Sensor, MachineGpsPoint, MachineGeofence
+
+TARGET_ID = 'eea0b678-ca68-4fbc-acd6-408e4c2228ad'
+
+db = SessionLocal()
+try:
+    m = db.get(Machine, TARGET_ID)
+    if not m:
+        print('Machine not found')
+        raise SystemExit(1)
+
+    db.query(User).filter(User.assigned_machine_id == m.id).update({User.assigned_machine_id: None}, synchronize_session=False)
+    db.query(Reading).filter(Reading.machine_id == m.id).delete(synchronize_session=False)
+    db.query(ReadingHourly).filter(ReadingHourly.machine_id == m.id).delete(synchronize_session=False)
+    db.query(ReadingDaily).filter(ReadingDaily.machine_id == m.id).delete(synchronize_session=False)
+    db.query(Event).filter(Event.machine_id == m.id).delete(synchronize_session=False)
+    db.query(Device).filter(Device.machine_id == m.id).delete(synchronize_session=False)
+    db.query(Sensor).filter(Sensor.machine_id == m.id).delete(synchronize_session=False)
+    db.query(MachineGpsPoint).filter(MachineGpsPoint.machine_id == m.id).delete(synchronize_session=False)
+    db.query(MachineGeofence).filter(MachineGeofence.machine_id == m.id).delete(synchronize_session=False)
+    db.delete(m)
+    db.commit()
+    print('Deleted:', TARGET_ID)
+finally:
+    db.close()
+PY"
+
+
+
+scp "C:/Users/Admin2/Desktop/HW2.0/hydrowin/hydrowin/backend/app/auth.py" hydrowin@192.168.1.57:~/hydrowin-backend/app/auth.py

@@ -1,0 +1,5 @@
+{
+  "new_string": "  static const _defaultHost = '5-165-27-141.sslip.io';\n  static const _defaultPort = 443;",
+  "old_string": "  static const _defaultHost = 'api.hydrowin.ru';\n  static const _defaultPort = 443;",
+  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\lib\\features\\settings\\network_settings_screen.dart"
+}

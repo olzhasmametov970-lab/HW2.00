@@ -1,0 +1,5 @@
+{
+  "new_string": "  http: ^1.4.0\n  flutter_secure_storage: ^10.3.1\n  crypto: ^3.0.6\n  sqflite_common_ffi: ^2.3.6",
+  "old_string": "  http: ^1.4.0\n  flutter_secure_storage: ^10.3.1\n  sqflite_common_ffi: ^2.3.6",
+  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\pubspec.yaml"
+}

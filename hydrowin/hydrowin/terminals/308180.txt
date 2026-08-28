@@ -1,0 +1,27 @@
+---
+pid: 19360
+cwd: "C:\\Users\\HYDRO\\.cursor\\projects\\C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6\\mobile\\gidrovin"
+command: "Set-Location \"C:\\Users\\HYDRO\\.cursor\\projects\\C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6\\mobile\\gidrovin\"; flutter test"
+started_at: 2026-05-18T06:07:33.006Z
+running_for_ms: 765930   
+---
+00:00 +0: loading C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/sensor_threshold_evaluator_test.dart
+00:00 +0: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/sensor_threshold_evaluator_test.dart: pressure in norm is ok
+00:00 +1: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/sensor_threshold_evaluator_test.dart: pressure below critical is critical
+00:00 +2: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/sensor_threshold_evaluator_test.dart: temperature above norm is warning
+00:00 +3: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/sensor_threshold_evaluator_test.dart: temperature above critical is critical
+00:00 +4: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/telemetry_packet_test.dart: parses valid 14-byte packet
+00:00 +5: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/telemetry_packet_test.dart: rejects wrong CRC
+00:00 +6: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/telemetry_packet_test.dart: decodes warning status bits
+00:00 +7: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/widget_test.dart: app starts with splash
+10:00 +7 -1: C:/Users/HYDRO/.cursor/projects/C-Users-HYDRO-AppData-Local-Temp-1d6c796b-6462-4d45-8cf5-cb2595ab97a6/mobile/gidrovin/test/widget_test.dart: app starts with splash [E]
+  TimeoutException after 0:10:00.000000: Test timed out after 10 minutes.
+  dart:isolate  _RawReceivePort._handleMessage
+  
+10:00 +7 -1: Some tests failed.
+
+---
+exit_code: 1
+elapsed_ms: 768341
+ended_at: 2026-05-18T06:20:21.347Z
+---

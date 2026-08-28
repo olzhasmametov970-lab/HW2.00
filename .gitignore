@@ -1,0 +1,38 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+!.env.production
+**/.env
+**/.env.local
+**/.env.*.local
+JWT.txt
+**/JWT.txt
+*_secrets.txt
+secrets.txt
+
+# Backend backups / dumps with secrets
+hydrowin/hydrowin/backend/backups/
+**/*.sql
+!**/*.sql.example
+
+# Large binaries / releases (GitHub 100MB hard limit)
+**/*.apk
+**/*.exe
+**/release/
+**/Release/
+hydrowin/hydrowin/iot_server/*.exe
+hydrowin_release_beget.zip
+
+# Python / Flutter clutter
+**/__pycache__/
+**/*.pyc
+**/.dart_tool/
+**/build/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

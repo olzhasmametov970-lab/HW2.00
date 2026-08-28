@@ -1,0 +1,52 @@
+name: hydrowin
+description: ГидроВин — диагностика гидравлического оборудования
+publish_to: 'none'
+version: 1.2.0+5
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  go_router: ^14.8.1
+  shared_preferences: ^2.5.3
+  fl_chart: ^0.70.2
+  intl: ^0.20.2
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  path_provider: ^2.1.5
+  http: ^1.4.0
+  flutter_secure_storage: ^10.3.1
+  crypto: ^3.0.6
+  sqflite_common_ffi: ^2.3.6
+  excel: ^4.0.6
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  flutter_blue_plus: ^2.3.11
+  flutter_local_notifications: ^19.4.0
+  file_picker: ^8.1.7
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/branding/hydrowin_logo.png
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf
+  fonts:
+    - family: NotoSans
+      fonts:
+        - asset: assets/fonts/NotoSans-Regular.ttf
+        - asset: assets/fonts/NotoSans-Bold.ttf
+          weight: 700

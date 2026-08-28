@@ -1,0 +1,5 @@
+{
+  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\lib\\app\\router.dart",
+  "old_string": "      GoRoute(\n        path: '/settings/network',\n        builder: (_, __) => const NetworkSettingsScreen(),\n      ),\n      GoRoute(\n        path: '/settings/developer',\n        builder: (_, __) => const DeveloperSettingsScreen(),\n      ),",
+  "new_string": "      GoRoute(\n        path: '/settings/network',\n        builder: (_, __) => const NetworkSettingsScreen(),\n      ),\n      // Старый путь «режим разработчика» → единый экран настройки блока/сети.\n      GoRoute(\n        path: '/settings/developer',\n        redirect: (_, __) => '/settings/network',\n      ),"
+}

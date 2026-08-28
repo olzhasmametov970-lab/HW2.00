@@ -1,0 +1,5 @@
+{
+  "new_string": "        // Для «живых» показаний достаточно короткого окна — не тянем сутки\n        // истории при каждом опросе (экономия трафика и CPU).\n        final lookbackMinutes = (_pollSeconds * 3 / 60).ceil().clamp(5, 30);\n        final series = await machines.getReadings(\n          machineId,\n          sensor.id,\n          minutes: lookbackMinutes,\n          channelIndex: sensor.config.channelIndex,\n        );",
+  "old_string": "        // ИСПРАВЛЕНИЕ: убрана переменная `from` — она объявлялась но не\n        // передавалась в getReadings(). Теперь используем только minutes.\n        final series = await machines.getReadings(\n          machineId,\n          sensor.id,\n          minutes: 1440,\n          channelIndex: sensor.config.channelIndex,\n        );",
+  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\lib\\data\\telemetry\\telemetry_session.dart"
+}

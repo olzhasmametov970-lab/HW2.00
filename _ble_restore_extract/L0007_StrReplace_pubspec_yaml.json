@@ -1,0 +1,5 @@
+{
+  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\pubspec.yaml",
+  "old_string": "dependencies:\n  flutter:\n    sdk: flutter\n  cupertino_icons: ^1.0.8",
+  "new_string": "dependencies:\n  flutter:\n    sdk: flutter\n  flutter_localizations:\n    sdk: flutter\n  cupertino_icons: ^1.0.8"
+}

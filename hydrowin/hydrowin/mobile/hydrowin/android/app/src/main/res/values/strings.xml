@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- app_name задаётся в productFlavors (full / lite) через resValue -->
+</resources>

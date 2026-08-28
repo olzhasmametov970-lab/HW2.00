@@ -1,0 +1,22 @@
+/*
+
+  https://docs.netlify.com/routing/headers/
+
+*/
+
+/
+
+  Content-Security-Policy: default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' mailto:
+
+  X-Content-Type-Options: nosniff
+
+  Referrer-Policy: strict-origin-when-cross-origin
+
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+
+/admin/*
+
+  X-Robots-Tag: noindex, nofollow
+

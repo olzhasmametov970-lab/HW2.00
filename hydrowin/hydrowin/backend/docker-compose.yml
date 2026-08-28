@@ -1,0 +1,113 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hydrowin}
+      POSTGRES_USER: ${POSTGRES_USER:-hydrowin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hydrowin_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydrowin -d hydrowin"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/mosquitto/config/docker-entrypoint.sh"]
+    environment:
+      MQTT_API_USER: ${MQTT_API_USER:-hydrowin-api}
+      MQTT_API_PASSWORD: ${MQTT_API_PASSWORD:-change-me-mqtt-api}
+      MQTT_DEVICE_USER: ${MQTT_DEVICE_USER:-hydrowin-device}
+      MQTT_DEVICE_PASSWORD: ${MQTT_DEVICE_PASSWORD:-change-me-mqtt-device}
+    # Только localhost: наружу 1883 не публикуем (MITM / plaintext device_key).
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - ./mosquitto/docker-entrypoint.sh:/mosquitto/config/docker-entrypoint.sh:ro
+      - mosquitto_data:/mosquitto/data
+
+  api:
+    build: .
+    restart: unless-stopped
+    # Даём docker-proxy время отпустить сокет при recreate.
+    stop_grace_period: 20s
+    depends_on:
+      db:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      # DATABASE_URL — только из env_file (.env). Не переопределять здесь:
+      # интерполяция ${POSTGRES_PASSWORD:-hydrowin_secret} часто даёт дефолт
+      # и затирает правильный URL из .env → password authentication failed.
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      MQTT_ENABLED: ${MQTT_ENABLED:-false}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+      MQTT_API_USER: ${MQTT_API_USER:-hydrowin-api}
+      MQTT_API_PASSWORD: ${MQTT_API_PASSWORD:-change-me-mqtt-api}
+      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_API_BASE: ${TELEGRAM_API_BASE:-https://api.telegram.org}
+      TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL:-}
+      OPENCELLID_API_KEY: ${OPENCELLID_API_KEY:-}
+      SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-HydroWin}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+      READINGS_RETENTION_DAYS: ${READINGS_RETENTION_DAYS:-30}
+      READINGS_ARCHIVE_DAYS: ${READINGS_ARCHIVE_DAYS:-180}
+      READINGS_PURGE_INTERVAL_HOURS: ${READINGS_PURGE_INTERVAL_HOURS:-24}
+    # Не публикуем 8090 на хост Windows: docker-proxy часто «залипает»
+    # на порту при recreate и контейнер висит в Starting.
+    # Снаружи — только Caddy :80/:443 → api:8090 внутри сети Docker.
+    # Локальная отладка: docker compose exec api wget -qO- http://127.0.0.1:8090/v1/health
+    # или временно: docker compose run --rm -p 8090:8090 api ...
+    expose:
+      - "8090"
+    volumes:
+      - uploads_data:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:-app.hydrowin.ru}
+      APP_DOMAIN: ${APP_DOMAIN:-app.hydrowin.ru}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@hydrowin.ru}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+  mosquitto_data:
+  uploads_data:

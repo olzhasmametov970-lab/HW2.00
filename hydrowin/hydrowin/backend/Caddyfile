@@ -1,0 +1,62 @@
+# HTTPS: только app.hydrowin.ru (кабinet + API /v1).
+# sslip.io и прочие Host на этом IP — явно отклоняются (без fallback).
+#
+#   app.hydrowin.ru → Ubuntu Caddy
+#   hydrowin.ru     → BeGet (лендинг)
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN:app.hydrowin.ru}, {$APP_DOMAIN:app.hydrowin.ru} {
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	handle /v1* {
+		reverse_proxy api:8090 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote}
+		}
+	}
+
+	handle /health {
+		reverse_proxy api:8090 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote}
+		}
+	}
+
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
+# Старый временный домен — не обслуживаем (sslip резолвится в тот же IP навсегда).
+5-165-27-141.sslip.io {
+	tls {
+		protocols tls1.2 tls1.3
+	}
+	respond "Use https://app.hydrowin.ru" 410
+}
+
+# Любой другой Host на 443 — не отдаём кабинет/API по ошибке (SNI mismatch).
+:443 {
+	tls {
+		protocols tls1.2 tls1.3
+	}
+	respond 403
+}

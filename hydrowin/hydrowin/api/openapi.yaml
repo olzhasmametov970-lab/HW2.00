@@ -1,0 +1,700 @@
+openapi: 3.0.3
+info:
+  title: HydroWin API
+  version: 0.1.0-mvp-b
+  description: REST API для полного режима ГидроВин (MVP-B+)
+
+servers:
+  - url: https://api.hydrowin.example/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Local dev
+
+tags:
+  - name: auth
+  - name: machines
+  - name: telemetry
+  - name: events
+  - name: notifications
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация организации и пользователя
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Вход
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Обновление access token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Выход и отзыв refresh token
+      operationId: logout
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /machines:
+    get:
+      tags: [machines]
+      operationId: listMachines
+      summary: Список машин организации
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ok, warning, critical, offline]
+        - name: q
+          in: query
+          description: Поиск по коду, модели, оператору
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /machines/{machineId}:
+    get:
+      tags: [machines]
+      operationId: getMachine
+      summary: Детали машины
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/machineId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineDetail'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /machines/{machineId}/sensors:
+    get:
+      tags: [machines]
+      operationId: listSensors
+      summary: Конфигурация датчиков
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/machineId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SensorConfig'
+    put:
+      tags: [machines]
+      operationId: updateSensors
+      summary: Обновление конфигурации датчиков
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/machineId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/SensorConfig'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SensorConfig'
+
+  /machines/{machineId}/readings:
+    get:
+      tags: [telemetry]
+      operationId: getReadings
+      summary: История показаний датчика
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/machineId'
+        - name: sensor_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: resolution
+          in: query
+          schema:
+            type: string
+            enum: [raw, 1m, 5m, 1h]
+            default: raw
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadingsSeries'
+
+  /ingest/telemetry:
+    post:
+      tags: [telemetry]
+      operationId: ingestTelemetry
+      summary: Приём телеметрии с блока (device auth)
+      security:
+        - deviceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryIngest'
+      responses:
+        '202':
+          description: Accepted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /events:
+    get:
+      tags: [events]
+      operationId: listEvents
+      summary: События (алерты) по парку
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: machine_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [info, warning, critical]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event'
+
+  /notifications/settings:
+    get:
+      tags: [notifications]
+      operationId: getNotificationSettings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettings'
+    put:
+      tags: [notifications]
+      operationId: updateNotificationSettings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSettings'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSettings'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    deviceKey:
+      type: apiKey
+      in: header
+      name: X-Device-Key
+
+  parameters:
+    machineId:
+      name: machineId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+    RegisterRequest:
+      type: object
+      required: [name, email, password, organization_name, terms_accepted]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        organization_name:
+          type: string
+        terms_accepted:
+          type: boolean
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    AuthTokens:
+      type: object
+      required: [access_token, refresh_token, expires_in, user]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [operator, mechanic, manager, org_admin]
+        organization_id:
+          type: string
+          format: uuid
+
+    FleetTotals:
+      type: object
+      properties:
+        total:
+          type: integer
+        ok:
+          type: integer
+        warning:
+          type: integer
+        critical:
+          type: integer
+        offline:
+          type: integer
+
+    MachineListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MachineSummary'
+        totals:
+          $ref: '#/components/schemas/FleetTotals'
+
+    MachineSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: '#001'
+        name:
+          type: string
+        model:
+          type: string
+        status:
+          type: string
+          enum: [ok, warning, critical, offline]
+        location_label:
+          type: string
+        operator_name:
+          type: string
+        headline_alert:
+          type: string
+          nullable: true
+        engine_hours:
+          type: number
+          nullable: true
+        last_seen_at:
+          type: string
+          format: date-time
+
+    MachineDetail:
+      allOf:
+        - $ref: '#/components/schemas/MachineSummary'
+        - type: object
+          properties:
+            bluetooth_status:
+              type: string
+              enum: [connected, connecting, disconnected]
+            gps:
+              $ref: '#/components/schemas/GpsPoint'
+
+    GpsPoint:
+      type: object
+      properties:
+        lat:
+          type: number
+        lon:
+          type: number
+        accuracy_m:
+          type: number
+
+    SensorConfig:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [pressure, temperature, flow]
+        unit:
+          type: string
+          example: bar
+        scale_min:
+          type: number
+        scale_max:
+          type: number
+        norm_min:
+          type: number
+          nullable: true
+        norm_max:
+          type: number
+        warn_high:
+          type: number
+          nullable: true
+        critical_high:
+          type: number
+        critical_low:
+          type: number
+          nullable: true
+        channel_index:
+          type: integer
+          minimum: 0
+          maximum: 9
+
+    Reading:
+      type: object
+      properties:
+        ts:
+          type: string
+          format: date-time
+        value:
+          type: number
+        status:
+          type: string
+          enum: [ok, warning, critical]
+
+    ReadingsSeries:
+      type: object
+      properties:
+        sensor_id:
+          type: string
+          format: uuid
+        unit:
+          type: string
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reading'
+        stats:
+          $ref: '#/components/schemas/ReadingStats'
+
+    ReadingStats:
+      type: object
+      properties:
+        avg:
+          type: number
+        min:
+          type: number
+        max:
+          type: number
+        pct_in_norm:
+          type: number
+
+    TelemetryIngest:
+      type: object
+      required: [message_id, device_id, machine_id, ts, sensors]
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+        machine_id:
+          type: string
+          format: uuid
+        ts:
+          type: string
+          format: date-time
+        gps:
+          $ref: '#/components/schemas/GpsPoint'
+        sensors:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelemetrySensorValue'
+
+    TelemetrySensorValue:
+      type: object
+      required: [channel, value]
+      properties:
+        channel:
+          type: integer
+          minimum: 0
+          maximum: 9
+        value:
+          type: number
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        machine_id:
+          type: string
+          format: uuid
+        sensor_id:
+          type: string
+          format: uuid
+          nullable: true
+        type:
+          type: string
+          enum:
+            - threshold_warning
+            - threshold_critical
+            - offline
+            - geofence_exit
+            - geofence_enter
+            - maintenance_due
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        message:
+          type: string
+        ts:
+          type: string
+          format: date-time
+        acknowledged:
+          type: boolean
+
+    NotificationSettings:
+      type: object
+      properties:
+        critical:
+          $ref: '#/components/schemas/ChannelPrefs'
+        warning:
+          $ref: '#/components/schemas/ChannelPrefs'
+        quiet_hours:
+          $ref: '#/components/schemas/QuietHours'
+
+    ChannelPrefs:
+      type: object
+      properties:
+        push:
+          type: boolean
+        sound:
+          type: boolean
+        vibration:
+          type: boolean
+        sms:
+          type: boolean
+        email:
+          type: boolean
+        telegram:
+          type: boolean
+
+    QuietHours:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        from:
+          type: string
+          example: '22:00'
+        to:
+          type: string
+          example: '08:00'

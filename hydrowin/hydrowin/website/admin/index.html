@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Админка — ГидроВин</title>
+  <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <div id="login-view" class="login-card hidden">
+    <h1>Вход в админку</h1>
+    <p>Редактирование текстов лендинга ГидроВин</p>
+    <form id="login-form">
+      <div class="field">
+        <label for="password">Пароль</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;">Войти</button>
+    </form>
+    <p id="login-error" class="hidden" style="color:var(--danger);margin-top:1rem;font-size:0.9rem;"></p>
+    <p style="margin-top:1.5rem;font-size:0.85rem;color:var(--muted);">
+      Без сервера: после правок скачайте <code>content.json</code> и замените файл в <code>website/data/</code>.
+    </p>
+  </div>
+
+  <div id="editor-view" class="hidden">
+    <header class="admin-header">
+      <h1>Админка ГидроВин</h1>
+      <div class="actions">
+        <a href="/" class="btn btn-outline" target="_blank" rel="noopener">Открыть сайт</a>
+        <button type="button" id="btn-download" class="btn btn-outline">Скачать JSON</button>
+        <button type="button" id="btn-save" class="btn btn-primary">Сохранить</button>
+        <button type="button" id="btn-logout" class="btn btn-danger">Выйти</button>
+      </div>
+    </header>
+    <div class="admin-wrap">
+      <div id="status" class="status-bar"></div>
+      <form id="content-form"></form>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
