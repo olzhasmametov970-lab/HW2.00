@@ -10,5 +10,6 @@ $ReleasePresetCloud = $true
 # true = кнопка «Демо завода (без сервера)» на экране входа
 $ReleaseEnableDemo = $true
 
-# CARTO basemaps (карта). Ключ: carto.com/basemaps/apikey
-$ReleaseCartoBasemapKey = "cb1_29zg_1_2bf178ba6304923c3f84296b"
+# CARTO basemaps (карта). Задайте перед сборкой: $env:CARTO_BASEMAP_KEY = "..."
+# Ключ: carto.com/basemaps/apikey — не хранить в git.
+$ReleaseCartoBasemapKey = $env:CARTO_BASEMAP_KEY

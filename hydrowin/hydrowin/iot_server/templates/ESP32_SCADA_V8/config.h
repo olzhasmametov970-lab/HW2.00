@@ -4,9 +4,9 @@
 // Версия
 #define VERSION "V8.0 Enterprise"
 
-// Wi-Fi
-#define WIFI_SSID      "SVEXC"
-#define WIFI_PASSWORD  "kam0123456789"
+// Wi-Fi — только Serial/BLE/NVS, не коммитить пароли
+#define WIFI_SSID      ""
+#define WIFI_PASSWORD  ""
 
 // HTTP
 #define HTTP_PORT 80

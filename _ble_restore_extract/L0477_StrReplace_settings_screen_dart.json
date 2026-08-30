@@ -1,5 +1,0 @@
-{
-  "new_string": "  /// Настройка блока/сети: админ платформы и админ завода; не производитель.\n  bool get _canConfigureBlockNetwork => _isAdmin && !_isManufacturer;",
-  "old_string": "  /// Настройка блока/сети — только админ предприятия (не HydroMaker).\n  bool get _canConfigureBlockNetwork => _isAdmin && !_isManufacturer;",
-  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\lib\\features\\settings\\settings_screen.dart"
-}

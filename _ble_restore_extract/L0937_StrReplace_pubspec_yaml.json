@@ -1,5 +1,0 @@
-{
-  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\pubspec.yaml",
-  "old_string": "  flutter_secure_storage: ^10.3.1\n  sqflite_common_ffi: ^2.3.6",
-  "new_string": "  flutter_secure_storage: ^10.3.1\n  crypto: ^3.0.6\n  sqflite_common_ffi: ^2.3.6"
-}

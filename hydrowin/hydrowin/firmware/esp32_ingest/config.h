@@ -75,11 +75,11 @@
 
 // DEVICE_KEY / DEVICE_ID / MACHINE — только Serial/BLE/NVS (не коммитить живыми).
 #ifndef DEVICE_KEY
-#define DEVICE_KEY     "TsL4bIW-IBjXrJp1tVTteTsT2p4Sv82gQBKKzAu_F70"
+#define DEVICE_KEY     ""
 #endif
-#define DEVICE_ID      "HW-HYDRO-04"
+#define DEVICE_ID      ""
 /** Пока MACHINE не задан (UUID 36 символов) — ingest запрещён. */
-#define MACHINE_ID     "8ff52953-d03d-4228-a263-367a6e631e63"
+#define MACHINE_ID     ""
 
 // Периодический вывод каналов в Serial (ток мА + значение + fault).
 #ifndef HYDROWIN_SERIAL_DIAG

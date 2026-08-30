@@ -19,8 +19,8 @@ docker compose up -d --build
 | | |
 |---|---|
 | Email | `admin@hydrowin.ru` (Админ платформы) |
-| Пароль | `HydroWin2026!` |
-| Ключ устройства | значение `DEFAULT_DEVICE_KEY` из `.env` |
+| Пароль | только **development** (см. `app/seed.py`; в production — случайный) |
+| Ключ устройства | через API `POST /machines/id/{id}/devices` (не коммитить) |
 
 ## Ingest телеметрии
 

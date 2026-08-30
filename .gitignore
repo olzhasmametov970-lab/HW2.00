@@ -2,7 +2,6 @@
 .env
 .env.*
 !.env.example
-!.env.production
 **/.env
 **/.env.local
 **/.env.*.local
@@ -10,6 +9,10 @@ JWT.txt
 **/JWT.txt
 *_secrets.txt
 secrets.txt
+
+# Локальные serial-логи / бэкапы с KEY/WIFI
+**/serial_board*.txt
+_ble_restore_extract/
 
 # Backend backups / dumps with secrets
 hydrowin/hydrowin/backend/backups/
@@ -24,7 +27,6 @@ hydrowin/hydrowin/backend/backups/
 hydrowin/hydrowin/iot_server/*.exe
 hydrowin_release_beget.zip
 
-# Python / Flutter clutter
 **/__pycache__/
 **/*.pyc
 **/.dart_tool/

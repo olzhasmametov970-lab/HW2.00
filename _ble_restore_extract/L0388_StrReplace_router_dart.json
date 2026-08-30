@@ -1,5 +1,0 @@
-{
-  "new_string": "import 'package:hydrowin/features/settings/network_settings_screen.dart';\nimport 'package:hydrowin/features/settings/settings_screen.dart';",
-  "old_string": "import 'package:hydrowin/features/settings/developer_settings_screen.dart';\nimport 'package:hydrowin/features/settings/network_settings_screen.dart';\nimport 'package:hydrowin/features/settings/settings_screen.dart';",
-  "path": "c:\\Users\\Admin2\\Desktop\\HW2.0\\hydrowin\\hydrowin\\mobile\\hydrowin\\lib\\app\\router.dart"
-}
