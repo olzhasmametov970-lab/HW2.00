@@ -21,6 +21,7 @@
 #include "hydrowin_ingest.h"
 #include "block_setup.h"
 #include "ble_config.h"
+#include "telemetry_policy.h"
 
 uint32_t lastSampleMs = 0;
 uint32_t lastFlushMs = 0;
@@ -45,9 +46,10 @@ void setup()
     Serial.printf(" HydroWin ESP32 %s (Wi‑Fi + BLE)\n", VERSION);
     Serial.printf(" Link: %s (GSM отключён на этой сборке)\n",
                   linkModeName(rtConfig().linkMode));
-    Serial.printf(" Sample %lu ms → batch HTTPS Wi‑Fi %lu\n",
+    Serial.printf(" Sample %lu ms → batch %lu ms (idle %lu ms)\n",
                   (unsigned long)TELEMETRY_SAMPLE_MS,
-                  (unsigned long)TELEMETRY_BATCH_WIFI_MS);
+                  (unsigned long)TELEMETRY_BATCH_WIFI_MS,
+                  (unsigned long)TELEMETRY_BATCH_WIFI_IDLE_MS);
     Serial.println(" Values: integer (bar / °C)");
     Serial.println("==========================================");
 
@@ -68,6 +70,7 @@ void setup()
     }
 
     Serial.println("\nСистема готова.\n");
+    printTelemetryPolicyStatus();
 }
 
 void loop()
@@ -75,6 +78,7 @@ void loop()
     handleBlockSetupSerial();
     updateSensors();
     bleLoop();
+    telemetryPolicyTick();
 
     const uint32_t now = millis();
 
@@ -90,11 +94,8 @@ void loop()
         sampleTelemetry();
     }
 
-    const uint32_t batchMs = telemetryBatchMs();
-    if ((now - lastFlushMs >= batchMs) || telemetryBufferFull()) {
-        if (telemetryBufferCount() > 0) {
-            lastFlushMs = now;
-            postTelemetry();
-        }
+    if (telemetryShouldFlush(now - lastFlushMs)) {
+        lastFlushMs = now;
+        postTelemetry();
     }
 }

@@ -321,6 +321,9 @@ class _CloudMachineDetailScreenState extends State<CloudMachineDetailScreen> {
     String? pendingMime;
     var clearPhoto = false;
     final existingPhoto = resolveMediaUrl(context, machine.photoUrl);
+    final existingPhotoProvider = existingPhoto.isNotEmpty
+        ? await authNetworkImageProvider(context, existingPhoto)
+        : null;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -339,11 +342,9 @@ class _CloudMachineDetailScreenState extends State<CloudMachineDetailScreen> {
                         Theme.of(ctx).colorScheme.surfaceContainerHighest,
                     backgroundImage: pendingPhoto != null
                         ? MemoryImage(pendingPhoto!)
-                        : (!clearPhoto && existingPhoto.isNotEmpty
-                            ? NetworkImage(existingPhoto)
-                            : null),
+                        : (!clearPhoto ? existingPhotoProvider : null),
                     child: (pendingPhoto == null &&
-                            (clearPhoto || existingPhoto.isEmpty))
+                            (clearPhoto || existingPhotoProvider == null))
                         ? const Icon(Icons.precision_manufacturing, size: 36)
                         : null,
                   ),
@@ -1275,8 +1276,8 @@ class _CloudMachineDetailScreenState extends State<CloudMachineDetailScreen> {
                         if (photo.isNotEmpty) {
                           return ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.network(
-                              photo,
+                            child: AuthNetworkImage(
+                              url: photo,
                               width: 48,
                               height: 48,
                               fit: BoxFit.cover,

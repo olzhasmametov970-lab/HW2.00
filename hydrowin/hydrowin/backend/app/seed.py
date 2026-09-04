@@ -34,6 +34,7 @@ from app.security import (
     hash_password,
     hash_token,
     headline_for_status,
+    verify_password,
     worst_status,
 )
 
@@ -48,6 +49,14 @@ CLIENT1_ADMIN_PASSWORD = "Client12026!"
 CLIENT2_ADMIN_EMAIL = "client2@hydrowin.ru"
 CLIENT2_ADMIN_PASSWORD = "Client22026!"
 
+# Известные plaintext из старых seed — ротируем, если всё ещё стоят в production.
+_KNOWN_DEMO_CREDENTIALS: tuple[tuple[str, str], ...] = (
+    (DEMO_ADMIN_EMAIL, DEMO_ADMIN_PASSWORD),
+    (MAKER_EMAIL, MAKER_PASSWORD),
+    (CLIENT1_ADMIN_EMAIL, CLIENT1_ADMIN_PASSWORD),
+    (CLIENT2_ADMIN_EMAIL, CLIENT2_ADMIN_PASSWORD),
+)
+
 
 def _demo_password_or_random(default: str) -> str:
     if settings.is_production:
@@ -56,6 +65,44 @@ def _demo_password_or_random(default: str) -> str:
         return secrets.token_urlsafe(18)
     return default
 
+
+def rotate_known_demo_passwords_if_production(db: Session) -> int:
+    """Если в production остались известные demo-пароли — сменить и отозвать refresh.
+
+    Типичный сценарий: учётки создали в development, затем ENVIRONMENT=production.
+    _ensure_user не трогает существующих — без этой ротации HydroWin2026! остаётся.
+    Возвращает число ротированных учёток.
+    """
+    if not settings.is_production:
+        return 0
+
+    import secrets
+
+    rotated = 0
+    for email, known_plain in _KNOWN_DEMO_CREDENTIALS:
+        user = db.query(User).filter(User.email == email.lower()).first()
+        if user is None:
+            continue
+        try:
+            still_demo = verify_password(known_plain, user.password_hash)
+        except Exception:
+            still_demo = False
+        if not still_demo:
+            continue
+        new_password = secrets.token_urlsafe(18)
+        user.password_hash = hash_password(new_password)
+        db.query(RefreshToken).filter(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked.is_(False),
+        ).update({"revoked": True})
+        rotated += 1
+        print(
+            f"⚠️  PRODUCTION: ротирован demo-пароль {email} → "
+            f"временный (сохраните сейчас): {new_password}"
+        )
+    if rotated:
+        db.commit()
+    return rotated
 
 def ensure_platform_org(db: Session) -> Organization:
     """Организация-платформа ГидроВин; admin@ — её админ (видит все машины)."""

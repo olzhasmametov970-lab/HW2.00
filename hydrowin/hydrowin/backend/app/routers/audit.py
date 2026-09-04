@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import get_current_user, iso_z
+from app.deps import require_admin, iso_z
 from app.models import AuditLog, User
 from app.org_access import get_user_org, is_platform_org
 
@@ -33,7 +33,7 @@ def list_audit(
     action: str | None = Query(None),
     from_: str | None = Query(None, alias="from"),
     to: str | None = Query(None),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     org = get_user_org(db, user)

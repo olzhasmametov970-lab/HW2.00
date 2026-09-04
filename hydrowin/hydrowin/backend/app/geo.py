@@ -15,6 +15,18 @@ TRACK_MIN_INTERVAL_S = 20
 TRACK_MIN_MOVE_M = 15.0
 GEOFENCE_ALERT_COOLDOWN = timedelta(minutes=5)
 GEOFENCE_MIN_BUFFER_M = 50.0
+# «Null Island» и прочий мусор до фикса GPS
+GPS_NULL_EPS = 0.05
+# Не рисуем/не пишем скачок >500 км между соседними точками трека
+TRACK_MAX_JUMP_M = 500_000.0
+
+
+def is_valid_gps_coordinate(lat: float, lon: float) -> bool:
+    if lat < -90 or lat > 90 or lon < -180 or lon > 180:
+        return False
+    if abs(lat) < GPS_NULL_EPS and abs(lon) < GPS_NULL_EPS:
+        return False
+    return True
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -61,6 +73,8 @@ def gps_point_to_json(p: MachineGpsPoint) -> dict:
 def _should_store_track(
     db: Session, machine_id: str, lat: float, lon: float, ts: datetime
 ) -> bool:
+    if not is_valid_gps_coordinate(lat, lon):
+        return False
     last = (
         db.query(MachineGpsPoint)
         .filter(MachineGpsPoint.machine_id == machine_id)
@@ -69,12 +83,32 @@ def _should_store_track(
     )
     if last is None:
         return True
+    if not is_valid_gps_coordinate(last.lat, last.lon):
+        return True
+    jump = haversine_m(lat, lon, last.lat, last.lon)
+    if jump > TRACK_MAX_JUMP_M:
+        return False
     dt = abs((ts - last.ts).total_seconds())
     if dt < TRACK_MIN_INTERVAL_S:
         move = haversine_m(lat, lon, last.lat, last.lon)
         if move < TRACK_MIN_MOVE_M:
             return False
     return True
+
+
+def filter_track_points(points: list[MachineGpsPoint]) -> list[MachineGpsPoint]:
+    """Убрать (0,0) и разорвать «телепорты» для карты."""
+    out: list[MachineGpsPoint] = []
+    prev: MachineGpsPoint | None = None
+    for p in points:
+        if not is_valid_gps_coordinate(p.lat, p.lon):
+            continue
+        if prev is not None:
+            if haversine_m(p.lat, p.lon, prev.lat, prev.lon) > TRACK_MAX_JUMP_M:
+                continue
+        out.append(p)
+        prev = p
+    return out
 
 
 def _emit_geofence_exit(
@@ -183,7 +217,7 @@ def apply_machine_gps(
 
     Возвращает id новых critical Event (geofence_exit).
     """
-    if lat < -90 or lat > 90 or lon < -180 or lon > 180:
+    if not is_valid_gps_coordinate(lat, lon):
         raise ValueError("invalid gps coordinates")
 
     ts = ts or datetime.utcnow()

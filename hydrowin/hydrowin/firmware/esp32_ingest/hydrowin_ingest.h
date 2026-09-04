@@ -15,6 +15,7 @@
 #include "mqtt_telemetry.h"
 #include "tls_certs.h"
 #include "telemetry_buffer.h"
+#include "telemetry_policy.h"
 
 static uint32_t s_msgCounter = 0;
 static A7670Modem s_modem;
@@ -278,6 +279,8 @@ inline bool postTelemetryGsm(const String& body)
         digitalWrite(LED_PIN, LOW);
         delay(80);
         digitalWrite(LED_PIN, HIGH);
+    } else {
+        s_modem.httpSessionClose();
     }
     return ok;
 }
@@ -302,6 +305,31 @@ inline uint32_t telemetryBatchMs()
     if (mode == LINK_WIFI) return TELEMETRY_BATCH_WIFI_MS;
     if (s_activeLink == LINK_GSM) return TELEMETRY_BATCH_GSM_MS;
     return TELEMETRY_BATCH_WIFI_MS;
+}
+
+inline uint32_t telemetryIdleBatchMs()
+{
+    const uint8_t mode = rtConfig().linkMode;
+    if (mode == LINK_GSM) return TELEMETRY_BATCH_GSM_IDLE_MS;
+    if (mode == LINK_WIFI) return TELEMETRY_BATCH_WIFI_IDLE_MS;
+    if (s_activeLink == LINK_GSM) return TELEMETRY_BATCH_GSM_IDLE_MS;
+    return TELEMETRY_BATCH_WIFI_IDLE_MS;
+}
+
+/** Интервал flush: 30 с актив / 5 мин покой (GSM). */
+inline uint32_t telemetryFlushIntervalMs()
+{
+    return telemetryIsIdle() ? telemetryIdleBatchMs() : telemetryBatchMs();
+}
+
+inline bool telemetryShouldFlush(uint32_t sinceLastFlushMs)
+{
+    if (telemetryBufferCount() == 0) return false;
+    if (telemetryBufferFull()) return true;
+    if (telemetryForceFlush()) {
+        return sinceLastFlushMs >= telemetryBatchMs();
+    }
+    return sinceLastFlushMs >= telemetryFlushIntervalMs();
 }
 
 inline bool tryPostWifi(const String& body)
@@ -447,7 +475,10 @@ inline bool postTelemetry()
 
 #if HYDROWIN_SERIAL_TELEMETRY
     Serial.println("\n--- ingest batch ---");
-    Serial.printf("rows=%u  ~%u bytes\n", (unsigned)n, (unsigned)body.length());
+    Serial.printf("rows=%u  ~%u bytes  mode=%s\n",
+                  (unsigned)n,
+                  (unsigned)body.length(),
+                  telemetryIsIdle() ? "IDLE" : "ACTIVE");
     Serial.printf("HTTPS: %s/v1/ingest/telemetry\n", base.c_str());
 #else
     (void)base;
@@ -461,6 +492,7 @@ inline bool postTelemetry()
     telemetryBufferClear();
 
     if (ok) {
+        telemetryPolicyOnFlush();
         flushOfflineQueue([](const String& queued) {
             const String fixed = rewriteQueuedTelemetryIds(
                 queued, rtConfig().machineId, rtConfig().deviceId);

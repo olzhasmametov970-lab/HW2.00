@@ -12,6 +12,8 @@ secrets.txt
 
 # Локальные serial-логи / бэкапы с KEY/WIFI
 **/serial_board*.txt
+device-keys-LOCAL.txt
+**/device-keys-LOCAL.txt
 _ble_restore_extract/
 
 # Backend backups / dumps with secrets
@@ -24,7 +26,6 @@ hydrowin/hydrowin/backend/backups/
 **/*.exe
 **/release/
 **/Release/
-hydrowin/hydrowin/iot_server/*.exe
 hydrowin_release_beget.zip
 
 **/__pycache__/

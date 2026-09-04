@@ -31,6 +31,9 @@
 #ifndef HYDROWIN_GPS_ENABLED
 #define HYDROWIN_GPS_ENABLED 1
 #endif
+#ifndef HYDROWIN_GEO_TELEMETRY
+#define HYDROWIN_GEO_TELEMETRY 1
+#endif
 
 // Для отладочных стендов — Wi-Fi first, удобно.
 // Для установки в поле: поменяйте на LINK auto или LINK gsm.
@@ -130,6 +133,7 @@
 #include <hydrowin_ingest.h>
 #include <block_setup.h>
 #include <ble_config.h>
+#include <telemetry_policy.h>
 
 // LED_PIN = GPIO 12, активный уровень LOW (светится когда GND)
 #ifndef LED_PIN
@@ -281,8 +285,11 @@ void setup()
 
     Serial.println();
     Serial.printf(" HydroWin %s (T-SIM7670G-S3 internal GNSS SIM7670G)\n", VERSION);
-    Serial.printf(" Link: %s | values: integer | GPS: internal modem GNSS\n",
-                  linkModeName(rtConfig().linkMode));
+    Serial.printf(" Link: %s | batch %lu s (idle %lu s) | geo=%s\n",
+                  linkModeName(rtConfig().linkMode),
+                  (unsigned long)(TELEMETRY_BATCH_GSM_MS / 1000UL),
+                  (unsigned long)(TELEMETRY_BATCH_GSM_IDLE_MS / 1000UL),
+                  geoTelemetryEnabled() ? "on" : "off");
     Serial.println();
 
     printSetupHelp();
@@ -299,6 +306,7 @@ void setup()
     s_lastFlushMs = millis();
 
     Serial.println("\nСистема готова (ESP32-S3 + SIM7670G LTE + built-in GNSS).\n");
+    printTelemetryPolicyStatus();
 }
 
 void loop()
@@ -306,19 +314,13 @@ void loop()
     handleBlockSetupSerial();
     updateSensors();
     bleLoop();
-
-    // UART2 не подключён к L76K на этой плате — _gpsLoop() не вызываем.
+    telemetryPolicyTick();
 
     const uint32_t now = millis();
 
-    const uint32_t batchMs = telemetryBatchMs();
-    const bool willPost =
-        telemetryBufferCount() > 0 &&
-        ((now - s_lastFlushMs >= batchMs) || telemetryBufferFull());
+    const bool willPost = telemetryShouldFlush(now - s_lastFlushMs);
 
-    // Опрос встроенного GNSS (SIM7670G) и CELL данных —
-    // ТОЛЬКО когда модем GSM isReady (требует AT-канал).
-    if (!willPost && hydroGsmModem().isReady() &&
+    if (geoTelemetryEnabled() && !willPost && hydroGsmModem().isReady() &&
         (now - s_lastGpsPollMs >= 8000UL)) {
         s_lastGpsPollMs = now;
 
@@ -332,6 +334,7 @@ void loop()
             }
         }
 
+#if HYDROWIN_SERIAL_DIAG
         if (s_lastCellMs == 0 || now - s_lastCellMs >= 30000UL) {
             s_lastCellMs = now;
             int mcc = 0, mnc = 0;
@@ -347,6 +350,7 @@ void loop()
                 g_cellValid = true;
             }
         }
+#endif
     }
 
 #if HYDROWIN_SERIAL_DIAG
@@ -421,10 +425,8 @@ void loop()
         sampleTelemetry();
     }
 
-    if ((now - s_lastFlushMs >= batchMs) || telemetryBufferFull()) {
-        if (telemetryBufferCount() > 0) {
-            s_lastFlushMs = now;
-            postTelemetry();
-        }
+    if (willPost) {
+        s_lastFlushMs = now;
+        postTelemetry();
     }
 }

@@ -13,6 +13,7 @@ class TokenStorage {
   static const _keyUserRole = 'user_role';
   static const _keyRememberLogin = 'remember_login';
   static const _keyRememberEmail = 'remember_email';
+  /// Legacy — больше не пишем пароль; при чтении очищаем.
   static const _keyRememberPassword = 'remember_password';
 
   final FlutterSecureStorage _storage;
@@ -25,27 +26,29 @@ class TokenStorage {
     return token != null && token.isNotEmpty;
   }
 
-  /// «Запомнить пользователя» на экране входа.
+  /// «Запомнить пользователя» на экране входа — только email, не пароль.
   Future<bool> getRememberLogin() async {
     final v = await _storage.read(key: _keyRememberLogin);
     return v == '1';
   }
 
   Future<({String email, String password})?> getRememberedCredentials() async {
+    // Миграция: удалить ранее сохранённый plaintext password.
+    await _storage.delete(key: _keyRememberPassword);
     if (!await getRememberLogin()) return null;
     final email = await _storage.read(key: _keyRememberEmail);
-    final password = await _storage.read(key: _keyRememberPassword);
     if (email == null || email.isEmpty) return null;
-    return (email: email, password: password ?? '');
+    return (email: email, password: '');
   }
 
   Future<void> saveRememberedCredentials({
     required String email,
-    required String password,
+    String password = '',
   }) async {
     await _storage.write(key: _keyRememberLogin, value: '1');
     await _storage.write(key: _keyRememberEmail, value: email);
-    await _storage.write(key: _keyRememberPassword, value: password);
+    // Пароль намеренно не храним (даже в secure storage).
+    await _storage.delete(key: _keyRememberPassword);
   }
 
   Future<void> clearRememberedCredentials() async {

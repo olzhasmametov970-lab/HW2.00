@@ -168,9 +168,37 @@ inline bool saveGsmConfig(const char* apn, const char* user, const char* pass)
     return true;
 }
 
+inline bool _rtHostSafe(const char* host)
+{
+    if (host == nullptr || host[0] == '\0') return false;
+    for (const char* p = host; *p; ++p) {
+        const unsigned char c = (unsigned char)*p;
+        // AT+HTTPPARA URL: кавычки / CR/LF / backslash ломают AT-строку.
+        if (c == '"' || c == '\'' || c == '\\' || c == '\r' || c == '\n' ||
+            c == ' ' || c < 0x20) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline bool _rtDeviceKeySafe(const char* key)
+{
+    if (key == nullptr) return false;
+    for (const char* p = key; *p; ++p) {
+        const unsigned char c = (unsigned char)*p;
+        if (c == '"' || c == '\'' || c == '\\' || c == '\r' || c == '\n' ||
+            c == ' ' || c == '\t' || c < 0x20) {
+            return false;
+        }
+    }
+    return true;
+}
+
 inline bool saveApiConfig(const char* host, uint16_t port, bool tls = false)
 {
     if (host == nullptr || strlen(host) == 0 || port == 0) return false;
+    if (!_rtHostSafe(host)) return false;
     _rtCopy(g_rt.apiHost, sizeof(g_rt.apiHost), host);
     g_rt.apiPort = port;
     g_rt.apiTls = tls || (port == 443);
@@ -239,6 +267,7 @@ inline bool saveDeviceKey(const char* deviceKey)
 {
     if (deviceKey == nullptr || strlen(deviceKey) < 8) return false;
     if (strlen(deviceKey) > 63) return false;
+    if (!_rtDeviceKeySafe(deviceKey)) return false;
     char buf[64];
     _rtCopy(buf, sizeof(buf), deviceKey);
     for (char* p = buf; *p; ++p) {
@@ -248,6 +277,7 @@ inline bool saveDeviceKey(const char* deviceKey)
         }
     }
     if (strlen(buf) < 8) return false;
+    if (!_rtDeviceKeySafe(buf)) return false;
     _rtCopy(g_rt.deviceKey, sizeof(g_rt.deviceKey), buf);
     g_rtPrefs.putString("device_key", g_rt.deviceKey);
     return true;
@@ -267,6 +297,65 @@ inline void printRuntimeConfig()
     Serial.printf("DEVICE:  %s\n", g_rt.deviceId);
     Serial.printf("KEY:     %s\n",
                   deviceKeyConfiguredRt() ? "***(set)***" : "(empty)");
+}
+
+/** BLE setup PIN: 6 цифр в NVS, не из MAC и не в advertising name. */
+#ifndef BLE_SETUP_PIN_LEN
+#define BLE_SETUP_PIN_LEN 7  // 6 digits + NUL
+#endif
+
+static uint32_t g_blePinGeneration = 1;
+
+inline uint32_t blePinGeneration() { return g_blePinGeneration; }
+
+inline void _bleGeneratePinDigits(char* out, size_t n)
+{
+    if (out == nullptr || n < 7) return;
+    // 100000..999999 — не совпадает с 4-hex хвостом MAC.
+    const uint32_t v = 100000u + (esp_random() % 900000u);
+    snprintf(out, n, "%06lu", (unsigned long)v);
+}
+
+inline bool _blePinLooksLegacyMacHex(const char* pin)
+{
+    if (pin == nullptr || strlen(pin) != 4) return false;
+    for (int i = 0; i < 4; i++) {
+        const char c = pin[i];
+        const bool hex = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') ||
+                         (c >= 'a' && c <= 'f');
+        if (!hex) return false;
+    }
+    return true;
+}
+
+/** Загрузить PIN из NVS или создать новый. Legacy MAC-hex (4 символа) ротируется. */
+inline void loadOrCreateBleSetupPin(char* out, size_t n)
+{
+    if (out == nullptr || n < 7) return;
+    Preferences p;
+    p.begin("hw_ble", false);
+    String stored = p.getString("pin", "");
+    if (stored.length() >= 6 && stored.length() <= 8 &&
+        !_blePinLooksLegacyMacHex(stored.c_str())) {
+        _rtCopy(out, n, stored.c_str());
+        p.end();
+        return;
+    }
+    _bleGeneratePinDigits(out, n);
+    p.putString("pin", out);
+    g_blePinGeneration++;
+    p.end();
+}
+
+inline void regenerateBleSetupPin(char* out, size_t n)
+{
+    if (out == nullptr || n < 7) return;
+    Preferences p;
+    p.begin("hw_ble", false);
+    _bleGeneratePinDigits(out, n);
+    p.putString("pin", out);
+    g_blePinGeneration++;
+    p.end();
 }
 
 #endif

@@ -17,13 +17,6 @@ from app.sensor_catalog import (
 )
 
 MACHINE_CODE = os.environ.get("MACHINE_CODE", "1783422691603")
-BLOCK_WS_URL = os.environ.get("BLOCK_WS_URL", "ws://192.168.1.34:81")
-
-
-def BLOCK_ip() -> str:
-    """IP блока BLOCK из BLOCK_WS_URL (ws://192.168.1.34:81 → 192.168.1.34)."""
-    host = BLOCK_WS_URL.split("://")[-1]
-    return host.split(":")[0].split("/")[0]
 
 
 def _first_organization(db: Session) -> Organization:
@@ -54,16 +47,8 @@ def _first_organization(db: Session) -> Organization:
 
 
 def ensure_BLOCK_machine(db: Session) -> Machine:
-    """Гарантирует запись Machine для BLOCK."""
-    ip = BLOCK_ip()
+    """Гарантирует lab-машину по MACHINE_CODE (development seed)."""
     machine = db.query(Machine).filter(Machine.code == MACHINE_CODE).first()
-    if machine is None:
-        machine = (
-            db.query(Machine)
-            .filter(Machine.location_label == ip)
-            .order_by(Machine.last_seen_at.desc().nullslast())
-            .first()
-        )
     if machine is None:
         org = _first_organization(db)
         mfr_id = (
@@ -77,11 +62,11 @@ def ensure_BLOCK_machine(db: Session) -> Machine:
             code=MACHINE_CODE,
             name="Станок",
             status="ok",
-            location_label=ip,
+            location_label="lab",
         )
         db.add(machine)
         db.flush()
-        print(f"✅ Создана машина : code={MACHINE_CODE}, ip={ip}, id={machine.id}")
+        print(f"✅ Создана машина: code={MACHINE_CODE}, id={machine.id}")
 
     dedupe_sensors_for_machine(db, machine.id)
     ensure_machine_sensors(db, machine)
@@ -89,7 +74,7 @@ def ensure_BLOCK_machine(db: Session) -> Machine:
 
 
 def resolve_machine_by_location(db: Session, location_label: str) -> Machine | None:
-    if location_label == BLOCK_ip():
+    if location_label == MACHINE_CODE:
         by_block = db.query(Machine).filter(Machine.code == MACHINE_CODE).first()
         if by_block is not None:
             return by_block

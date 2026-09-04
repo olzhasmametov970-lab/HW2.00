@@ -27,6 +27,9 @@
 #ifndef HYDROWIN_GPS_ENABLED
 #define HYDROWIN_GPS_ENABLED 1
 #endif
+#ifndef HYDROWIN_GEO_TELEMETRY
+#define HYDROWIN_GEO_TELEMETRY 1
+#endif
 
 #ifndef LINK_MODE
 #define LINK_MODE LINK_AUTO
@@ -121,6 +124,7 @@
 #include <hydrowin_ingest.h>
 #include <block_setup.h>
 #include <ble_config.h>
+#include <telemetry_policy.h>
 
 #ifndef LED_PIN
 #define LED_PIN 12
@@ -262,7 +266,8 @@ void setup()
         pinMode(A7670_DTR_PIN, OUTPUT);
         digitalWrite(A7670_DTR_PIN, LOW);
     }
-    if (A7670_FORCE_EXTERNAL_GPS && GPS_WAKEUP_PIN >= 0) {
+    // Геолокация: L76K только при HYDROWIN_GEO_TELEMETRY (экономия UART/питания).
+    if (geoTelemetryEnabled() && A7670_FORCE_EXTERNAL_GPS && GPS_WAKEUP_PIN >= 0) {
         pinMode(GPS_WAKEUP_PIN, OUTPUT);
         digitalWrite(GPS_WAKEUP_PIN, HIGH);
         delay(200);  // L76K: дать питание до открытия UART
@@ -283,19 +288,21 @@ void setup()
 
     Serial.println();
     Serial.printf(" HydroWin %s (T-A7670G-S3 + external L76K GPS)\n", VERSION);
-    Serial.printf(" Link: %s | values: integer | GPS: external L76K UART2\n",
-                  linkModeName(rtConfig().linkMode));
+    Serial.printf(" Link: %s | batch %lu s (idle %lu s) | geo=%s\n",
+                  linkModeName(rtConfig().linkMode),
+                  (unsigned long)(TELEMETRY_BATCH_GSM_MS / 1000UL),
+                  (unsigned long)(TELEMETRY_BATCH_GSM_IDLE_MS / 1000UL),
+                  geoTelemetryEnabled() ? "on" : "off");
     Serial.println();
 
     printSetupHelp();
 
-    // ⚠️ Внешний GPS L76K — СТАРТУЕМ СРАЗУ, даже без SIM-карты и сети!
-    if (A7670_FORCE_EXTERNAL_GPS) {
+    if (geoTelemetryEnabled() && A7670_FORCE_EXTERNAL_GPS) {
         GPS_SERIAL.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
         Serial.printf(
-            "L76K: UART2 открыт %d бод (RX=%d ← TX L76K, TX=%d → RX L76K)\n"
-            "       Холодный старт на открытом небе: 30–120 сек.\n",
-            GPS_BAUD, GPS_RX_PIN, GPS_TX_PIN);
+            "L76K: UART2 %d бод (geo telemetry, lat/lon каждые %lu мин)\n",
+            GPS_BAUD,
+            (unsigned long)(HYDROWIN_GPS_TELEM_INTERVAL_MS / 60000UL));
     }
 
     initSensors();
@@ -307,6 +314,7 @@ void setup()
     s_lastFlushMs = millis();
 
     Serial.println("\nСистема готова (ESP32-S3 + A7670G LTE + L76K external GPS).\n");
+    printTelemetryPolicyStatus();
 }
 
 void loop()
@@ -314,28 +322,21 @@ void loop()
     handleBlockSetupSerial();
     updateSensors();
     bleLoop();
+    telemetryPolicyTick();
 
-    // Внешний L76K по UART2 — читаем ВСЕГДА, независимо от статуса GSM.
-    // Даже без SIM-карты координаты будут обновляться!
-    if (A7670_FORCE_EXTERNAL_GPS) {
+    if (geoTelemetryEnabled() && A7670_FORCE_EXTERNAL_GPS) {
         _gpsLoop();
     }
 
     const uint32_t now = millis();
 
-    const uint32_t batchMs = telemetryBatchMs();
-    const bool willPost =
-        telemetryBufferCount() > 0 &&
-        ((now - s_lastFlushMs >= batchMs) || telemetryBufferFull());
+    const bool willPost = telemetryShouldFlush(now - s_lastFlushMs);
 
-    // Опрос CELL (AT+CPSI) и модемного GNSS (если не включен внешний L76K) —
-    // только когда A7670G already GSM-READY и нужен AT-канал.
-    if (!willPost && hydroGsmModem().isReady() &&
+    // Опрос модемного GNSS / CELL — только для geo и диагностики.
+    if (geoTelemetryEnabled() && !willPost && hydroGsmModem().isReady() &&
         (now - s_lastGpsPollMs >= 8000UL)) {
         s_lastGpsPollMs = now;
 
-        // Для A7670G с внешним L76K — встроенного GNSS НЕТ,
-        // pollGnss пропускаем, он только заглушит AT-канал.
         if (!A7670_FORCE_EXTERNAL_GPS) {
             double lat = 0, lon = 0;
             if (hydroGsmModem().pollGnss(&lat, &lon)) {
@@ -346,6 +347,7 @@ void loop()
             }
         }
 
+#if HYDROWIN_SERIAL_DIAG
         if (s_lastCellMs == 0 || now - s_lastCellMs >= 30000UL) {
             s_lastCellMs = now;
             int mcc = 0, mnc = 0;
@@ -361,6 +363,7 @@ void loop()
                 g_cellValid = true;
             }
         }
+#endif
     }
 
 #if HYDROWIN_SERIAL_DIAG
@@ -447,10 +450,8 @@ void loop()
         sampleTelemetry();
     }
 
-    if ((now - s_lastFlushMs >= batchMs) || telemetryBufferFull()) {
-        if (telemetryBufferCount() > 0) {
-            s_lastFlushMs = now;
-            postTelemetry();
-        }
+    if (willPost) {
+        s_lastFlushMs = now;
+        postTelemetry();
     }
 }

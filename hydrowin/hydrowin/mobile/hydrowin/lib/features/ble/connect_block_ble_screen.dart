@@ -25,6 +25,7 @@ class _ConnectBlockBleScreenState extends State<ConnectBlockBleScreen> {
   final _wifiPass = TextEditingController();
   final _apiHost = TextEditingController(text: 'app.hydrowin.ru');
   final _apiPort = TextEditingController(text: '443');
+  final _blePin = TextEditingController();
 
   List<BleDiscoveredBlock> _devices = const [];
   List<MachineSummary> _fleet = const [];
@@ -57,6 +58,7 @@ class _ConnectBlockBleScreenState extends State<ConnectBlockBleScreen> {
     _wifiPass.dispose();
     _apiHost.dispose();
     _apiPort.dispose();
+    _blePin.dispose();
     super.dispose();
   }
 
@@ -201,6 +203,34 @@ class _ConnectBlockBleScreenState extends State<ConnectBlockBleScreen> {
     }
   }
 
+  Future<bool> _authBleIfNeeded() async {
+    final pin = _blePin.text.trim();
+    if (pin.isEmpty) {
+      setState(
+        () => _status =
+            'Введите BLE PIN (USB Serial: BLEPIN). Не хвост MAC / имя HydroWin-XXXX.',
+      );
+      return false;
+    }
+    setState(() => _lastReply = null);
+    await _client.writeLine('AUTH $pin');
+    for (var i = 0; i < 12; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      final reply = (_lastReply ?? '').toUpperCase();
+      if (reply.contains('OK AUTH')) return true;
+      if (reply.contains('ERR AUTH')) {
+        setState(
+          () => _status = reply.contains('LOCKED')
+              ? 'BLE: слишком много ошибок PIN — подождите ~30 с'
+              : 'BLE: неверный PIN (смотрите Serial: BLEPIN)',
+        );
+        return false;
+      }
+    }
+    // Нет ответа — всё равно шлём команды; плата ответит ERR AUTH required.
+    return true;
+  }
+
   Future<void> _sendWifi() async {
     if (!_canSendWifiApi) {
       setState(() => _status = 'Wi‑Fi/API доступны только админу платформы');
@@ -213,6 +243,7 @@ class _ConnectBlockBleScreenState extends State<ConnectBlockBleScreen> {
     }
     setState(() => _busy = true);
     try {
+      if (!await _authBleIfNeeded()) return;
       await _client.writeLine('WIFI $ssid|${_wifiPass.text}');
       await _client.writeLine(
         'API ${_apiHost.text.trim()}|${_apiPort.text.trim()}',
@@ -457,8 +488,18 @@ class _ConnectBlockBleScreenState extends State<ConnectBlockBleScreen> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Text(
-                      'Только администратор платформы',
+                      'Только администратор платформы · PIN с USB (команда BLEPIN)',
                       style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _blePin,
+                      obscureText: true,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'BLE PIN (AUTH)',
+                        helperText: '6 цифр из Serial Monitor, не из имени платы',
+                      ),
                     ),
                     const SizedBox(height: 8),
                     TextField(
@@ -496,7 +537,13 @@ class _ConnectBlockBleScreenState extends State<ConnectBlockBleScreen> {
                       onPressed: _busy
                           ? null
                           : () async {
-                              await _client.writeLine('CFG');
+                              setState(() => _busy = true);
+                              try {
+                                if (!await _authBleIfNeeded()) return;
+                                await _client.writeLine('CFG');
+                              } finally {
+                                if (mounted) setState(() => _busy = false);
+                              }
                             },
                       child: const Text('Запросить CFG'),
                     ),

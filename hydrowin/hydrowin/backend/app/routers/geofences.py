@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.geo import gps_point_to_json
+from app.geo import filter_track_points, gps_point_to_json
 from app.models import Machine, MachineGeofence, MachineGpsPoint, User
 from app.org_access import is_driver, load_machine_for_user
 from app.routers.machines import _require_view
@@ -126,4 +126,5 @@ def get_machine_track(
         )
     items = query.order_by(MachineGpsPoint.ts.desc()).limit(limit).all()
     items.reverse()
+    items = filter_track_points(items)
     return {"items": [gps_point_to_json(p) for p in items]}

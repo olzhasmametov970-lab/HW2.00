@@ -15,6 +15,9 @@ services:
       retries: 10
 
   mosquitto:
+    # Опционально: docker compose --profile mqtt up -d
+    # Прод: MQTT_ENABLED=false, телеметрия по HTTPS ingest.
+    profiles: ["mqtt"]
     image: eclipse-mosquitto:2.0
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/mosquitto/config/docker-entrypoint.sh"]
@@ -40,8 +43,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      mosquitto:
-        condition: service_started
     env_file:
       - .env
     environment:
@@ -50,8 +51,8 @@ services:
       # и затирает правильный URL из .env → password authentication failed.
       ENVIRONMENT: ${ENVIRONMENT:-production}
       MQTT_ENABLED: ${MQTT_ENABLED:-false}
-      MQTT_HOST: mosquitto
-      MQTT_PORT: 1883
+      MQTT_HOST: ${MQTT_HOST:-mosquitto}
+      MQTT_PORT: ${MQTT_PORT:-1883}
       MQTT_API_USER: ${MQTT_API_USER:-hydrowin-api}
       MQTT_API_PASSWORD: ${MQTT_API_PASSWORD:-change-me-mqtt-api}
       TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}

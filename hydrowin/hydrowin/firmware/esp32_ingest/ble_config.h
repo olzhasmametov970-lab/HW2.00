@@ -134,18 +134,30 @@ static NimBLECharacteristic* s_bleRx = nullptr;
 static bool s_bleConnected = false;
 static bool s_bleReady = false;
 static uint32_t s_bleLastTelemetryMs = 0;
-/** Сессия BLE: после AUTH <pin> можно менять KEY/WIFI/… */
+/** Сессия BLE: после AUTH <pin> можно менять KEY/WIFI/CFG/… */
 static bool s_bleAuthed = false;
-static char s_blePin[8] = "";
+static uint32_t s_bleAuthedPinGen = 0;
+static uint8_t s_bleAuthFails = 0;
+static uint32_t s_bleAuthLockUntilMs = 0;
+
+inline void bleEnsureAuthStillValid()
+{
+    if (s_bleAuthed && s_bleAuthedPinGen != blePinGeneration()) {
+        s_bleAuthed = false;
+        Serial.println("BLE: session cleared (PIN rotated)");
+    }
+}
 
 inline bool bleSetupLineAllowed(const String& line)
 {
+    bleEnsureAuthStillValid();
     String cmd = line;
     cmd.trim();
     int sp = cmd.indexOf(' ');
     String head = sp > 0 ? cmd.substring(0, sp) : cmd;
     head.toUpperCase();
-    if (head == "AUTH" || head == "CFG" || head == "HELP" || head == "SHOW") {
+    // CFG / KEY / WIFI — только после AUTH. HELP/SHOW — диагностика без секретов.
+    if (head == "AUTH" || head == "HELP" || head == "SHOW") {
         return true;
     }
     return s_bleAuthed;
@@ -164,6 +176,38 @@ inline void bleNotifyText(const char* text)
 {
     if (text == nullptr) return;
     bleNotifyRaw(reinterpret_cast<const uint8_t*>(text), strlen(text));
+}
+
+inline bool bleTryAuthPin(const String& pin)
+{
+    const uint32_t now = millis();
+    if (s_bleAuthLockUntilMs != 0 && now < s_bleAuthLockUntilMs) {
+        bleNotifyText("ERR AUTH locked\n");
+        Serial.println("BLE: AUTH locked (too many failures)");
+        return false;
+    }
+    char expected[BLE_SETUP_PIN_LEN];
+    loadOrCreateBleSetupPin(expected, sizeof(expected));
+    if (pin.length() > 0 && pin == String(expected)) {
+        s_bleAuthed = true;
+        s_bleAuthedPinGen = blePinGeneration();
+        s_bleAuthFails = 0;
+        s_bleAuthLockUntilMs = 0;
+        bleNotifyText("OK AUTH\n");
+        Serial.println("BLE: AUTH ok");
+        return true;
+    }
+    s_bleAuthed = false;
+    s_bleAuthFails++;
+    if (s_bleAuthFails >= 5) {
+        s_bleAuthFails = 0;
+        s_bleAuthLockUntilMs = now + 30000UL;
+        bleNotifyText("ERR AUTH locked\n");
+        Serial.println("BLE: AUTH lock 30s after failures");
+    } else {
+        bleNotifyText("ERR AUTH\n");
+    }
+    return false;
 }
 
 inline void bleNotifyCfgSummary()
@@ -220,13 +264,7 @@ class HydroBleRxCallbacks : public NimBLECharacteristicCallbacks {
                     if (trimmed.startsWith("AUTH ") || trimmed.startsWith("auth ")) {
                         String pin = trimmed.substring(5);
                         pin.trim();
-                        if (pin == String(s_blePin)) {
-                            s_bleAuthed = true;
-                            bleNotifyText("OK AUTH\n");
-                            Serial.println("BLE: AUTH ok");
-                        } else {
-                            bleNotifyText("ERR AUTH\n");
-                        }
+                        bleTryAuthPin(pin);
                     } else if (!bleSetupLineAllowed(trimmed)) {
                         bleNotifyText("ERR AUTH required\n");
                     } else {
@@ -249,12 +287,7 @@ class HydroBleRxCallbacks : public NimBLECharacteristicCallbacks {
             if (trimmed.startsWith("AUTH ") || trimmed.startsWith("auth ")) {
                 String pin = trimmed.substring(5);
                 pin.trim();
-                if (pin == String(s_blePin)) {
-                    s_bleAuthed = true;
-                    bleNotifyText("OK AUTH\n");
-                } else {
-                    bleNotifyText("ERR AUTH\n");
-                }
+                bleTryAuthPin(pin);
             } else if (!bleSetupLineAllowed(trimmed)) {
                 bleNotifyText("ERR AUTH required\n");
             } else {
@@ -274,15 +307,17 @@ static HydroBleRxCallbacks s_bleRxCb;
 
 inline void bleBegin()
 {
-    // Уникальное имя в эфире: HydroWin-9D42 (хвост BT MAC) —
-    // две платы с DEVICE HW-1 больше не выглядят одинаково.
+    // Имя в эфире: HydroWin-9D42 (хвост BT MAC) — только идентификация.
+    // PIN — случайные 6 цифр в NVS, НЕ из MAC и НЕ в advertise name.
     char name[24];
+    char pin[BLE_SETUP_PIN_LEN];
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_BT);
     snprintf(name, sizeof(name), "HydroWin-%02X%02X", mac[4], mac[5]);
-    // PIN для BLE-конфига = хвост MAC (4 hex), печатается в Serial.
-    snprintf(s_blePin, sizeof(s_blePin), "%02X%02X", mac[4], mac[5]);
+    loadOrCreateBleSetupPin(pin, sizeof(pin));
     s_bleAuthed = false;
+    s_bleAuthFails = 0;
+    s_bleAuthLockUntilMs = 0;
 
     NimBLEDevice::init(name);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
@@ -319,7 +354,10 @@ inline void bleBegin()
         mac[4],
         mac[5],
         name);
-    Serial.printf("BLE: setup PIN (AUTH) = %s\n", s_blePin);
+    Serial.printf(
+        "BLE: setup PIN (AUTH) = %s  — только Serial/USB; не в имени эфира\n",
+        pin);
+    Serial.println("BLE: USB → BLEPIN (показать) | BLEPIN NEW (сменить)");
 }
 
 inline void bleLoop()

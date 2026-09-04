@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:hydrowin/core/constants/map_tile_config.dart';
+import 'package:hydrowin/core/geo/track_map_utils.dart';
 import 'package:hydrowin/domain/models/machine_summary.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -50,14 +51,19 @@ class _MachineLocationMapCardState extends State<MachineLocationMapCard> {
 
   LatLng get _point {
     final gps = widget.gps;
-    return gps != null ? LatLng(gps.lat, gps.lon) : _defaultCenter;
+    if (gps != null && isPlausibleGpsCoord(gps.lat, gps.lon)) {
+      return LatLng(gps.lat, gps.lon);
+    }
+    return _defaultCenter;
   }
 
-  bool get _hasGps => widget.gps != null;
+  bool get _hasGps {
+    final gps = widget.gps;
+    return gps != null && isPlausibleGpsCoord(gps.lat, gps.lon);
+  }
 
-  List<LatLng> get _trackPoints => widget.track
-      .map((p) => LatLng(p.lat, p.lon))
-      .toList(growable: false);
+  List<List<LatLng>> get _trackSegments =>
+      trackPolylineSegments(widget.track);
 
   void _onFindDevices() {
     showModalBottomSheet<void>(
@@ -181,7 +187,7 @@ class _MachineLocationMapCardState extends State<MachineLocationMapCard> {
                       center: _point,
                       hasGps: _hasGps,
                       geofence: geofence,
-                      trackPoints: _trackPoints,
+                      trackSegments: _trackSegments,
                       interact: false,
                       backgroundColor: scheme.surfaceContainerHighest,
                       primary: scheme.primary,
@@ -311,7 +317,7 @@ class _MachineMapView extends StatelessWidget {
     required this.center,
     required this.hasGps,
     required this.geofence,
-    required this.trackPoints,
+    required this.trackSegments,
     required this.interact,
     required this.backgroundColor,
     required this.primary,
@@ -323,7 +329,7 @@ class _MachineMapView extends StatelessWidget {
   final LatLng center;
   final bool hasGps;
   final MachineGeofence? geofence;
-  final List<LatLng> trackPoints;
+  final List<List<LatLng>> trackSegments;
   final bool interact;
   final Color backgroundColor;
   final Color primary;
@@ -370,14 +376,15 @@ class _MachineMapView extends StatelessWidget {
               ),
             ],
           ),
-        if (trackPoints.length >= 2)
+        if (trackSegments.isNotEmpty)
           PolylineLayer(
             polylines: [
-              Polyline(
-                points: trackPoints,
-                strokeWidth: 3,
-                color: tertiary,
-              ),
+              for (final seg in trackSegments)
+                Polyline(
+                  points: seg,
+                  strokeWidth: 3,
+                  color: tertiary,
+                ),
             ],
           ),
         if (hasGps)
@@ -429,11 +436,10 @@ class _ExpandedMachineMapPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final trackPoints =
-        track.map((p) => LatLng(p.lat, p.lon)).toList(growable: false);
+    final trackSegments = trackPolylineSegments(track);
     final media = MediaQuery.sizeOf(context);
     final wide = media.width >= 900;
-    final gpsPoint = gps;
+    final gpsPoint = hasGps ? gps : null;
     final coordLabel = gpsPoint == null
         ? null
         : '${gpsPoint.lat.toStringAsFixed(5)},${gpsPoint.lon.toStringAsFixed(5)}';
@@ -481,7 +487,7 @@ class _ExpandedMachineMapPage extends StatelessWidget {
                         center: center,
                         hasGps: hasGps,
                         geofence: geofence,
-                        trackPoints: trackPoints,
+                        trackSegments: trackSegments,
                         interact: true,
                         backgroundColor: scheme.surfaceContainerHighest,
                         primary: scheme.primary,

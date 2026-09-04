@@ -128,6 +128,11 @@ class Settings(BaseSettings):
                 print("⚠️  TELEGRAM_BOT_TOKEN не настроен")
             if weak_smtp:
                 print("⚠️  SMTP не настроен полностью")
+            if self.uvicorn_workers > 1:
+                print(
+                    "⚠️  UVICORN_WORKERS>1: in-memory rate limit не шарится "
+                    "между процессами"
+                )
             return
         problems: list[str] = []
         if weak_jwt:
@@ -147,6 +152,11 @@ class Settings(BaseSettings):
         if weak_cors_localhost:
             problems.append(
                 "CORS_ORIGINS в production не должен включать localhost"
+            )
+        if self.uvicorn_workers > 1:
+            print(
+                "⚠️  UVICORN_WORKERS>1: in-memory rate limit login/ingest "
+                "не шарится между workers (оставьте 1 или Redis)"
             )
         if problems:
             raise RuntimeError(

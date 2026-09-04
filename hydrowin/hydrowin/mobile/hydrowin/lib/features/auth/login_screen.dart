@@ -63,7 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _remember = remember || remembered != null;
       if (remembered != null) {
         _email.text = remembered.email;
-        _password.text = remembered.password;
+        // Пароль больше не восстанавливаем из хранилища.
       }
     });
     unawaited(_probeConnectivity());
@@ -124,10 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _persistRememberChoice(String email, String password) async {
     final tokens = CloudScope.of(context).tokens;
     if (_remember) {
-      await tokens.saveRememberedCredentials(
-        email: email,
-        password: password,
-      );
+      await tokens.saveRememberedCredentials(email: email);
     } else {
       await tokens.clearRememberedCredentials();
     }
@@ -289,10 +286,8 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Запомнить пользователя'),
-            subtitle: const Text(
-              'Сохранить email и пароль на этом устройстве',
-            ),
+            title: const Text('Запомнить email'),
+            subtitle: const Text('Пароль на устройстве не сохраняется'),
             value: _remember,
             onChanged: _loading
                 ? null

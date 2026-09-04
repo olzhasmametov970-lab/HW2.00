@@ -9,7 +9,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define VERSION "HydroWin-V10.0"
+#define VERSION "HydroWin-V10.1"
 
 // ── Режим связи ─────────────────────────────────────────────────────────────
 #define LINK_WIFI 0
@@ -107,11 +107,54 @@
 #ifndef TELEMETRY_BATCH_WIFI_MS
 #define TELEMETRY_BATCH_WIFI_MS 5000UL
 #endif
+// ── Трафик LTE (цель ≤100 МБ/мес) ───────────────────────────────────────────
+// Актив: POST каждые 30 с. Покой (≥3 мин стабильности): каждые 5 мин.
+// Keep-alive HTTP: TLS не на каждый POST. GPS lat/lon редко (если geo on).
+// SIM: IoT/M2M с шагом 1 КБ (не «голосовая» с округлением 10 КБ).
 #ifndef TELEMETRY_BATCH_GSM_MS
-#define TELEMETRY_BATCH_GSM_MS  5000UL
+#define TELEMETRY_BATCH_GSM_MS  30000UL
 #endif
+/** GSM/LTE: интервал POST при стабильных датчиках (покой). */
+#ifndef TELEMETRY_BATCH_GSM_IDLE_MS
+#define TELEMETRY_BATCH_GSM_IDLE_MS (5UL * 60UL * 1000UL)
+#endif
+/** Wi‑Fi: интервал POST при покое (опционально). */
+#ifndef TELEMETRY_BATCH_WIFI_IDLE_MS
+#define TELEMETRY_BATCH_WIFI_IDLE_MS (60UL * 1000UL)
+#endif
+/** Сколько секунд подряд значения стабильны → режим покоя. */
+#ifndef TELEMETRY_IDLE_STABLE_SEC
+#define TELEMETRY_IDLE_STABLE_SEC 180U
+#endif
+/**
+ * Порог |Δvalue| (бар / °C) для выхода из покоя.
+ * 2: шум АЦП ±1 не держит блок в ACTIVE 24/7 (критично для 100 МБ).
+ */
+#ifndef TELEMETRY_IDLE_VALUE_THRESH
+#define TELEMETRY_IDLE_VALUE_THRESH 2
+#endif
+/** A7670: держать HTTP(S)-сессию открытой между батчами (без TLS на каждый POST). */
+#ifndef A7670_HTTP_KEEPALIVE
+#define A7670_HTTP_KEEPALIVE 1
+#endif
+/**
+ * Закрыть HTTP-сессию после простоя.
+ * ≥ idle POST (5 мин) + запас: иначе каждый idle POST = новый TLS.
+ */
+#ifndef A7670_HTTP_SESSION_IDLE_MS
+#define A7670_HTTP_SESSION_IDLE_MS (15UL * 60UL * 1000UL)
+#endif
+/** Геолокация в телеметрии (full_ta7670: 1). Только lat/lon, редко. */
+#ifndef HYDROWIN_GEO_TELEMETRY
+#define HYDROWIN_GEO_TELEMETRY 0
+#endif
+/** GPS в JSON не чаще раза в N мс (экономия; 30 мин под 100 МБ). */
+#ifndef HYDROWIN_GPS_TELEM_INTERVAL_MS
+#define HYDROWIN_GPS_TELEM_INTERVAL_MS (30UL * 60UL * 1000UL)
+#endif
+/** Активный батч ≤30 с × 1 Гц → 30 строк; 32 с запасом. */
 #ifndef TELEMETRY_BUF_MAX
-#define TELEMETRY_BUF_MAX   60
+#define TELEMETRY_BUF_MAX   32
 #endif
 #ifndef SEND_INTERVAL_MS
 #define SEND_INTERVAL_MS TELEMETRY_SAMPLE_MS

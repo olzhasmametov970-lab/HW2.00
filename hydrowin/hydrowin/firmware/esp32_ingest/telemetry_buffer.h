@@ -14,6 +14,7 @@
 
 #include "config.h"
 #include "sensors.h"
+#include "telemetry_policy.h"
 
 #ifndef HYDROWIN_GPS_ENABLED
 #define HYDROWIN_GPS_ENABLED 0
@@ -57,6 +58,24 @@ static TelemetryRow s_telemBuf[TELEMETRY_BUF_MAX];
 static uint16_t s_telemCount = 0;
 static uint16_t s_telemHead = 0; // кольцевой буфер
 
+#if HYDROWIN_GPS_ENABLED && HYDROWIN_GEO_TELEMETRY
+static uint32_t s_lastGpsTelemMs = 0;
+
+inline bool telemetryShouldIncludeGps()
+{
+    if (!g_gpsValid) return false;
+    const uint32_t now = millis();
+    if (s_lastGpsTelemMs == 0 ||
+        (now - s_lastGpsTelemMs) >= HYDROWIN_GPS_TELEM_INTERVAL_MS) {
+        s_lastGpsTelemMs = now;
+        return true;
+    }
+    return false;
+}
+#else
+inline bool telemetryShouldIncludeGps() { return false; }
+#endif
+
 inline uint16_t telemetryBufferCount() { return s_telemCount; }
 
 inline void telemetryBufferClear()
@@ -71,6 +90,40 @@ inline void telemetryBufferPushSample()
 {
     if (!g_sensorsSettled) return;
 
+    time_t now = time(nullptr);
+    const uint32_t ts = (now >= 1700000000) ? (uint32_t)now : 0;
+
+    auto fillRow = [&](TelemetryRow& row) {
+        row.ts = ts;
+        row.mask = 0;
+        row.faultMask = 0;
+        for (uint8_t ch = 0; ch < TELEMETRY_CHANNELS; ch++) {
+            row.v[ch] = 0;
+            const SensorRuntime* s = findSensorByChannel(ch);
+            if (s == nullptr || !s->cal.enabled) continue;
+            if (!s->reading.valid && s->reading.fault == LOOP_OK) continue;
+
+            if (s->reading.fault == LOOP_OPEN) {
+                row.v[ch] = s->reading.value;
+                row.faultMask |= (uint16_t)(1u << (ch * 2));
+            } else if (s->reading.fault == LOOP_SHORT) {
+                row.v[ch] = s->reading.value;
+                row.faultMask |= (uint16_t)(2u << (ch * 2));
+            } else {
+                row.v[ch] = s->reading.value;
+            }
+            row.mask |= (uint8_t)(1u << ch);
+        }
+    };
+
+    // Покой: одна строка в буфере (не раздуваем батч и не flush каждые 60 с).
+    if (telemetryIsIdle() && s_telemCount > 0) {
+        const uint16_t idx =
+            (uint16_t)((s_telemHead + s_telemCount - 1) % TELEMETRY_BUF_MAX);
+        fillRow(s_telemBuf[idx]);
+        return;
+    }
+
     if (s_telemCount >= TELEMETRY_BUF_MAX) {
         // Переполнение: сдвигаем голову (кольцо), теряем самую старую секунду
         s_telemHead = (uint16_t)((s_telemHead + 1) % TELEMETRY_BUF_MAX);
@@ -79,29 +132,7 @@ inline void telemetryBufferPushSample()
 
     const uint16_t idx =
         (uint16_t)((s_telemHead + s_telemCount) % TELEMETRY_BUF_MAX);
-    TelemetryRow& row = s_telemBuf[idx];
-    time_t now = time(nullptr);
-    row.ts = (now >= 1700000000) ? (uint32_t)now : 0;
-    row.mask = 0;
-    row.faultMask = 0;
-
-    for (uint8_t ch = 0; ch < TELEMETRY_CHANNELS; ch++) {
-        row.v[ch] = 0;
-        const SensorRuntime* s = findSensorByChannel(ch);
-        if (s == nullptr || !s->cal.enabled) continue;
-        if (!s->reading.valid && s->reading.fault == LOOP_OK) continue;
-
-        if (s->reading.fault == LOOP_OPEN) {
-            row.v[ch] = s->reading.value; // ток мА (целый)
-            row.faultMask |= (uint16_t)(1u << (ch * 2));
-        } else if (s->reading.fault == LOOP_SHORT) {
-            row.v[ch] = s->reading.value;
-            row.faultMask |= (uint16_t)(2u << (ch * 2));
-        } else {
-            row.v[ch] = s->reading.value;
-        }
-        row.mask |= (uint8_t)(1u << ch);
-    }
+    fillRow(s_telemBuf[idx]);
 
     s_telemCount++;
 }
@@ -109,13 +140,13 @@ inline void telemetryBufferPushSample()
 /** Собрать промышленный JSON без кучи временных String. */
 inline String telemetryBufferBuildJson()
 {
-    // 60 × ~80 байт + gps/cell ≈ 6–8 КБ
-    char* buf = (char*)malloc(8192);
+    // 60 × ~80 байт было избыточно; актив ≤32 строк × ~50 B ≈ 2 КБ + gps
+    char* buf = (char*)malloc(4096);
     if (buf == nullptr) {
         return String("{\"d\":[]}");
     }
     size_t pos = 0;
-    const size_t cap = 8191;
+    const size_t cap = 4095;
 
     auto append = [&](const char* s) {
         const size_t n = strlen(s);
@@ -153,29 +184,15 @@ inline String telemetryBufferBuildJson()
     append("]");
 
 #if HYDROWIN_GPS_ENABLED
-    if (g_gpsValid) {
-        char gps[96];
+    if (telemetryShouldIncludeGps()) {
+        char gps[64];
         snprintf(
             gps,
             sizeof(gps),
-            ",\"gps\":{\"lat\":%.6f,\"lon\":%.6f,\"accuracy_m\":%.0f}",
+            ",\"gps\":{\"lat\":%.5f,\"lon\":%.5f}",
             g_gpsLat,
-            g_gpsLon,
-            g_gpsAcc > 1.0 ? g_gpsAcc : 15.0);
+            g_gpsLon);
         append(gps);
-    }
-    if (g_cellValid) {
-        char cell[144];
-        snprintf(
-            cell,
-            sizeof(cell),
-            ",\"cell\":{\"mcc\":%d,\"mnc\":%d,\"lac\":%lu,\"cid\":%lu,\"radio\":\"%s\"}",
-            g_cellMcc,
-            g_cellMnc,
-            (unsigned long)g_cellLac,
-            (unsigned long)g_cellCid,
-            g_cellRadio[0] ? g_cellRadio : "lte");
-        append(cell);
     }
 #endif
 

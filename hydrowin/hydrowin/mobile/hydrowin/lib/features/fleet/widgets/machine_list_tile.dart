@@ -53,8 +53,8 @@ class MachineListTile extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: photoUrl.isNotEmpty
-                      ? Image.network(
-                          photoUrl,
+                      ? AuthNetworkImage(
+                          url: photoUrl,
                           width: 56,
                           height: 56,
                           fit: BoxFit.cover,

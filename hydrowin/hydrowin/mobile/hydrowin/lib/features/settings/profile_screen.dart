@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hydrowin/app/cloud_scope.dart';
+import 'package:hydrowin/core/media/media_url.dart';
 import 'package:hydrowin/domain/models/cloud_user.dart';
 import 'package:intl/intl.dart';
 
@@ -28,6 +29,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _gender = '';
   DateTime? _birthDate;
   String? _avatarUrl;
+  NetworkImage? _avatarProvider;
   Uint8List? _pendingAvatarBytes;
   String? _pendingAvatarMime;
   bool _clearAvatar = false;
@@ -55,16 +57,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  String _mediaUrl(String? path) {
-    if (path == null || path.isEmpty) return '';
-    if (path.startsWith('http')) return path;
-    final base = Uri.parse(CloudScope.of(context).api.baseUrl);
-    return Uri(
-      scheme: base.scheme,
-      host: base.host,
-      port: base.hasPort ? base.port : null,
-      path: path,
-    ).toString();
+  Future<void> _refreshAvatarProvider(String? path) async {
+    final url = resolveMediaUrl(context, path);
+    if (url.isEmpty) {
+      if (mounted) setState(() => _avatarProvider = null);
+      return;
+    }
+    final provider = await authNetworkImageProvider(context, url);
+    if (mounted) setState(() => _avatarProvider = provider);
   }
 
   Future<void> _load() async {
@@ -90,6 +90,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _clearAvatar = false;
         _loading = false;
       });
+      await _refreshAvatarProvider(u.avatarUrl);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -232,6 +233,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _clearAvatar = false;
         _saving = false;
       });
+      await _refreshAvatarProvider(updated.avatarUrl);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Профиль сохранён')),
       );
@@ -298,11 +301,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             backgroundColor: scheme.surfaceContainerHighest,
                             backgroundImage: _pendingAvatarBytes != null
                                 ? MemoryImage(_pendingAvatarBytes!)
-                                : (_avatarUrl != null && !_clearAvatar
-                                    ? NetworkImage(_mediaUrl(_avatarUrl))
+                                : (_avatarUrl != null &&
+                                      !_clearAvatar &&
+                                      _avatarProvider != null
+                                    ? _avatarProvider
                                     : null),
                             child: (_pendingAvatarBytes == null &&
-                                    (_avatarUrl == null || _clearAvatar))
+                                    (_avatarUrl == null ||
+                                        _clearAvatar ||
+                                        _avatarProvider == null))
                                 ? Icon(
                                     Icons.person,
                                     size: 48,

@@ -4,8 +4,7 @@
 #   cd C:\Users\Admin2\Desktop\HW2.0\hydrowin\hydrowin\backend
 #   .\deploy-to-prod.ps1
 #
-# Важно: BLOCK_WS_ENABLED=false отключает WebSocket к 192.168.1.34.
-# Не включайте на проде, пока BLOCK не шлёт HTTP POST на /v1/ingest/telemetry.
+# Телеметрия: платы шлют HTTPS POST /v1/ingest/telemetry + X-Device-Key.
 
 $ErrorActionPreference = "Stop"
 
@@ -83,7 +82,7 @@ try {
 
     if (-not $destOk) { throw "File sync failed" }
 
-    Write-Host "`n[3/5] Ensure BLOCK_WS_ENABLED=false in .env (keep WebSocket OFF only when ready)..." -ForegroundColor Yellow
+    Write-Host "`n[3/5] Ensure .env exists on server..." -ForegroundColor Yellow
     Invoke-Command -Session $session -ScriptBlock {
         param($p)
         $envPath = Join-Path $p ".env"
@@ -95,16 +94,6 @@ try {
             else {
                 throw ".env not found in $p — create it manually"
             }
-        }
-        $text = Get-Content $envPath -Raw
-        if ($text -notmatch "BLOCK_WS_ENABLED") {
-            Add-Content $envPath "`nBLOCK_WS_ENABLED=false`nBLOCK_WS_URL=`n"
-            Write-Host "Appended BLOCK_WS_ENABLED=false"
-        }
-        else {
-            $text = $text -replace "BLOCK_WS_ENABLED\s*=\s*\S+", "BLOCK_WS_ENABLED=false"
-            Set-Content -Path $envPath -Value $text -NoNewline
-            Write-Host "Updated existing BLOCK_WS_ENABLED=false"
         }
         Write-Host "--- .env (redacted secrets) ---"
         Get-Content $envPath | ForEach-Object {
@@ -132,8 +121,7 @@ try {
     }
 
     Write-Host "`n=== DONE ===" -ForegroundColor Green
-    Write-Host "Если в логах есть 'WebSocket-воркер: ВЫКЛ' — WS отключён."
-    Write-Host "Не отключайте WS на проде, пока BLOCK не шлёт POST /v1/ingest/telemetry."
+    Write-Host "Проверьте логи api: ingest идёт через HTTPS POST /v1/ingest/telemetry."
 }
 finally {
     Remove-PSSession $session -ErrorAction SilentlyContinue

@@ -214,9 +214,13 @@ def test_telegram(
             f"HydroWin: тестовое оповещение для {user.email}. Канал работает.",
         )
     except RuntimeError as exc:
+        print(f"test-telegram error: {type(exc).__name__}: {exc}")
         raise HTTPException(
             status_code=502,
-            detail={"code": "telegram_unreachable", "message": str(exc)},
+            detail={
+                "code": "telegram_unreachable",
+                "message": "Не удалось отправить в Telegram",
+            },
         ) from exc
     write_audit(
         db,
@@ -273,9 +277,13 @@ def test_email(
             html_body=html_body,
         )
     except (RuntimeError, OSError) as exc:
+        print(f"test-email error: {type(exc).__name__}: {exc}")
         raise HTTPException(
             status_code=502,
-            detail={"code": "smtp_unreachable", "message": str(exc)},
+            detail={
+                "code": "smtp_unreachable",
+                "message": "Не удалось отправить email",
+            },
         ) from exc
     write_audit(
         db,

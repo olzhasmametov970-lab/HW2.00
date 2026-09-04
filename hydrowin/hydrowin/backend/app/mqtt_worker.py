@@ -16,7 +16,7 @@ from typing import Any
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Device
-from app.security import hash_device_key
+from app.security import device_key_hash_candidates, hash_device_key
 from app.seed import ingest_telemetry
 from app.telemetry_format import normalize_telemetry_payloads
 
@@ -59,10 +59,15 @@ def _handle_message(topic: str, payload: bytes) -> None:
         return
     data["device_id"] = topic_device
 
-    key_hash = hash_device_key(device_key)
+    modern, legacy = device_key_hash_candidates(device_key)
     db = SessionLocal()
     try:
-        device = db.query(Device).filter(Device.api_key_hash == key_hash).first()
+        device = db.query(Device).filter(Device.api_key_hash == modern).first()
+        if device is None:
+            device = db.query(Device).filter(Device.api_key_hash == legacy).first()
+            if device is not None:
+                device.api_key_hash = modern
+                db.commit()
         if device is None:
             logger.warning("MQTT: неверный device_key для %s", topic_device)
             return

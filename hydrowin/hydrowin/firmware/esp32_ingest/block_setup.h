@@ -8,6 +8,7 @@
 #include "runtime_config.h"
 #include "offline_queue.h"
 #include "hydrowin_ingest.h"
+#include "telemetry_policy.h"
 
 // USB Serial Monitor, 115200 бод.
 //
@@ -49,6 +50,7 @@ inline void printSetupHelp()
     Serial.println("DEVICE <id>                            — метка платы");
     Serial.println("KEY <device_key>                       — X-Device-Key");
     Serial.println("CFG                                    — показать сеть");
+    Serial.println("TRAFFIC                                — покой/актив, бюджет ≤100 МБ/мес");
     Serial.println("QUEUE / QUEUE CLEAR                    — офлайн-очередь flash");
     Serial.println("GSMAT AT+CPIN?                         — AT прямо в A7670");
     Serial.println("GSMRETRY                               — снова init A7670");
@@ -56,8 +58,10 @@ inline void printSetupHelp()
     Serial.println("GPSTX $PMTK…                           — сырая команда в L76K");
     Serial.println("GPSNMEA ON|OFF                         — сырой NMEA в монитор");
     Serial.println("HELP");
+    Serial.println("BLEPIN / BLEPIN NEW                 — PIN для BLE AUTH (USB)");
     Serial.println();
-    Serial.println("BLE: AUTH <PIN> (хвост MAC) перед KEY/WIFI/MACHINE");
+    Serial.println("BLE: AUTH <6-digit PIN> перед KEY/WIFI/MACHINE/CFG");
+    Serial.println("     PIN только в Serial (BLEPIN), не в имени HydroWin-XXXX");
     Serial.println();
 }
 
@@ -81,7 +85,7 @@ inline int _indexOfNextSetupCmd(const String& s)
     static const char* k[] = {
         " MACHINE ", " DEVICE ", " KEY ", " GSM ", " WIFI ", " API ",
         " LINK ", " GSMAT ", " CAL ", " ZERO ", " MATCH ", " ENABLE ",
-        " DISABLE ", " RESET ", " CFG", " HELP", " SHOW", " QUEUE",
+        " DISABLE ", " RESET ", " CFG", " TRAFFIC", " HELP", " SHOW", " QUEUE",
         " GSMRETRY", " GPSRESET", " GPSTX ", " GPSNMEA ",
     };
     int best = -1;
@@ -116,6 +120,22 @@ inline void processSetupLine(String line)
         return;
     }
 
+    // PIN для BLE AUTH — только USB Serial (физический доступ). NVS hw_ble.
+    if (line.equalsIgnoreCase("BLEPIN") || line.equalsIgnoreCase("BLE PIN")) {
+        char pin[BLE_SETUP_PIN_LEN];
+        loadOrCreateBleSetupPin(pin, sizeof(pin));
+        Serial.printf("BLE PIN (AUTH): %s\n", pin);
+        Serial.println("BLE: в приложении — AUTH <PIN> перед WIFI/KEY/CFG");
+        return;
+    }
+    if (line.equalsIgnoreCase("BLEPIN NEW") || line.equalsIgnoreCase("BLEPIN RESET")) {
+        char pin[BLE_SETUP_PIN_LEN];
+        regenerateBleSetupPin(pin, sizeof(pin));
+        Serial.printf("BLE PIN NEW (AUTH): %s\n", pin);
+        Serial.println("BLE: старый PIN недействителен; переподключите BLE-сессию");
+        return;
+    }
+
     if (line.equalsIgnoreCase("SHOW")) {
         printSensorsDiag();
         return;
@@ -124,6 +144,12 @@ inline void processSetupLine(String line)
     if (line.equalsIgnoreCase("CFG")) {
         printRuntimeConfig();
         printOfflineQueueStatus();
+        printTelemetryPolicyStatus();
+        return;
+    }
+
+    if (line.equalsIgnoreCase("TRAFFIC")) {
+        printTelemetryPolicyStatus();
         return;
     }
 

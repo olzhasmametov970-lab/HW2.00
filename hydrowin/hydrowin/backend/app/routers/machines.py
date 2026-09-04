@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 from app.security import effective_machine_status, hash_device_key
 from app.sensor_catalog import list_catalog
 from app.sensor_service import (
-    BLOCK_ip,
     MACHINE_CODE,
     add_sensor_to_machine,
     ensure_BLOCK_machine,
@@ -81,9 +80,7 @@ def _resolve_machine(
         machine = resolve_machine_by_location(db, key)
     if machine is None:
         machine = db.query(Machine).filter(Machine.code == key).first()
-    if (machine is None and allow_ensure and (
-        key == BLOCK_ip() or key == MACHINE_CODE
-    )):
+    if machine is None and allow_ensure and key == MACHINE_CODE:
         machine = ensure_BLOCK_machine(db)
         db.commit()
     return machine
@@ -448,7 +445,7 @@ def update_machine(
     elif not _looks_like_uuid(ip_address):
         # Не создаём второй станок на тот же IP — обновляем существующий
         existing = resolve_machine_by_location(db, ip_address)
-        if existing is None and ip_address == BLOCK_ip():
+        if existing is None and ip_address == MACHINE_CODE:
             existing = db.query(Machine).filter(Machine.code == MACHINE_CODE).first()
         if existing is not None:
             machine = _require_write(db, user, existing)

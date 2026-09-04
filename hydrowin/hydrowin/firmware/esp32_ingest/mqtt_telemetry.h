@@ -1,6 +1,6 @@
 /*
  * MQTT publish телеметрии (Wi‑Fi). Только при TELEMETRY_TRANSPORT == 2.
- * Продакшен: HTTPS. GSM/A7670: только HTTPS POST.
+ * GSM/A7670: HTTPS keep-alive (A7670_HTTP_KEEPALIVE), не MQTT.
  */
 
 #ifndef MQTT_TELEMETRY_H

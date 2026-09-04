@@ -9,7 +9,11 @@ from app.database import get_db
 from app.models import Device, Organization, User
 from app.org_types import ACCESS_OWNER, ACCESS_PLATFORM
 from app.roles import ADMIN_ROLES, ROLE_ORG_ADMIN, STAFF_ROLES
-from app.security import decode_access_token, effective_machine_status, hash_device_key
+from app.security import (
+    decode_access_token,
+    device_key_hash_candidates,
+    effective_machine_status,
+)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -76,8 +80,14 @@ def get_device_by_key(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "unauthorized", "message": "X-Device-Key обязателен"},
         )
-    key_hash = hash_device_key(x_device_key)
-    device = db.query(Device).filter(Device.api_key_hash == key_hash).first()
+    modern, legacy = device_key_hash_candidates(x_device_key)
+    device = db.query(Device).filter(Device.api_key_hash == modern).first()
+    if device is None:
+        device = db.query(Device).filter(Device.api_key_hash == legacy).first()
+        if device is not None:
+            # Миграция: переписать hash на peppered HMAC.
+            device.api_key_hash = modern
+            db.commit()
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

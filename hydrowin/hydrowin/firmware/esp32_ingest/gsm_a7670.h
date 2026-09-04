@@ -61,6 +61,17 @@
 #define A7670_FORCE_EXTERNAL_GPS 0
 #endif
 
+/** Кавычка / CR / LF в URL или USERDATA ломают AT+HTTPPARA. */
+inline bool a7670AtParamSafe(const char* s)
+{
+    if (s == nullptr) return true;
+    for (const char* p = s; *p; ++p) {
+        const unsigned char c = (unsigned char)*p;
+        if (c == '"' || c == '\r' || c == '\n' || c < 0x20) return false;
+    }
+    return true;
+}
+
 class A7670Modem {
 public:
     A7670Modem() : _at(A7670_UART) {}
@@ -422,15 +433,21 @@ public:
     {
         if (!_ready && !begin()) return false;
         if (url == nullptr || body == nullptr) return false;
+        if (!a7670AtParamSafe(url) || !a7670AtParamSafe(headers)) {
+            Serial.println("A7670: URL/headers содержат запрещённые символы");
+            return false;
+        }
 
         syncTime();
+        httpSessionIdleCheck();
 
+#if A7670_HTTP_KEEPALIVE
+        if (!httpSessionEnsure(url, headers)) return false;
+#else
         at("AT+HTTPTERM", "OK", 3000);
         if (!at("AT+HTTPINIT", "OK", 10000)) return false;
-
         at("AT+CSSLCFG=\"sslversion\",0,3", "OK", 3000);
         at("AT+CSSLCFG=\"enableSNI\",0,1", "OK", 3000);
-
         char para[192];
         snprintf(para, sizeof(para), "AT+HTTPPARA=\"URL\",\"%s\"", url);
         if (!at(para, "OK", 5000)) {
@@ -438,12 +455,12 @@ public:
             return false;
         }
         at("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK", 3000);
-
         if (headers && headers[0]) {
             char ud[256];
             snprintf(ud, sizeof(ud), "AT+HTTPPARA=\"USERDATA\",\"%s\"", headers);
             at(ud, "OK", 3000);
         }
+#endif
 
         const size_t len = strlen(body);
         char dataCmd[48];
@@ -452,13 +469,13 @@ public:
         _at.println(dataCmd);
         if (!readUntil("DOWNLOAD", 10000) && !readUntil("CONNECT", 2000)) {
             Serial.println("A7670: HTTPDATA — нет DOWNLOAD");
-            at("AT+HTTPTERM", "OK", 3000);
+            httpSessionClose();
             return false;
         }
         _at.print(body);
         if (!readUntil("OK", 15000)) {
             Serial.println("A7670: HTTPDATA — нет OK после body");
-            at("AT+HTTPTERM", "OK", 3000);
+            httpSessionClose();
             return false;
         }
 
@@ -467,20 +484,40 @@ public:
         int code = -1;
         int bodyLen = 0;
         if (!waitHttpAction(&code, &bodyLen)) {
+#if !A7670_HTTP_KEEPALIVE
             at("AT+HTTPTERM", "OK", 3000, false);
+#endif
+            httpSessionClose();
             if (outCode) *outCode = code;
             return false;
         }
-        // A7670: AT+HTTPREAD без аргументов → ERROR. Тело ingest — `null` (4 байта),
-        // читать не нужно: статус уже в +HTTPACTION.
         if (bodyLen > 4) {
             char rd[40];
             snprintf(rd, sizeof(rd), "AT+HTTPREAD=0,%d", bodyLen);
             at(rd, "OK", 8000, false);
         }
+
+#if !A7670_HTTP_KEEPALIVE
         at("AT+HTTPTERM", "OK", 3000, false);
+#endif
+
         if (outCode) *outCode = code;
-        return code >= 200 && code < 300;
+        const bool ok = code >= 200 && code < 300;
+        if (ok) {
+            _httpSessionLastMs = millis();
+        } else {
+            httpSessionClose();
+        }
+        return ok;
+    }
+
+    void httpSessionClose()
+    {
+        if (!_httpSessionOpen) return;
+        at("AT+HTTPTERM", "OK", 3000, false);
+        _httpSessionOpen = false;
+        _httpSessionUrl[0] = '\0';
+        _httpSessionHeaders[0] = '\0';
     }
 
 private:
@@ -498,6 +535,10 @@ private:
     bool _ready = false;
     bool _unavailable = false;
     bool _modemGnss = false;
+    bool _httpSessionOpen = false;
+    char _httpSessionUrl[160] = {0};
+    char _httpSessionHeaders[128] = {0};
+    uint32_t _httpSessionLastMs = 0;
     String _lastGnssRaw;
     String _lastLbsRaw;
     String _lastCellRaw;
@@ -889,6 +930,67 @@ private:
         int n = 0;
         if (!_splitCsv(rest, f, 16, &n)) return false;
         return _parseLatLonFields(f, 4, n, lat, lon);
+    }
+
+    void httpSessionIdleCheck()
+    {
+#if A7670_HTTP_KEEPALIVE
+        if (!_httpSessionOpen || _httpSessionLastMs == 0) return;
+        if ((millis() - _httpSessionLastMs) >= A7670_HTTP_SESSION_IDLE_MS) {
+            Serial.println("A7670: HTTP session idle timeout → close");
+            httpSessionClose();
+        }
+#endif
+    }
+
+    bool httpSessionEnsure(const char* url, const char* headers)
+    {
+#if !A7670_HTTP_KEEPALIVE
+        (void)url;
+        (void)headers;
+        return false;
+#else
+        if (url == nullptr) return false;
+        if (!a7670AtParamSafe(url) || !a7670AtParamSafe(headers)) {
+            Serial.println("A7670: URL/headers unsafe for AT");
+            return false;
+        }
+        const char* hdr = headers ? headers : "";
+
+        if (_httpSessionOpen) {
+            if (strcmp(_httpSessionUrl, url) != 0 ||
+                strcmp(_httpSessionHeaders, hdr) != 0) {
+                httpSessionClose();
+            }
+        }
+
+        if (_httpSessionOpen) return true;
+
+        at("AT+HTTPTERM", "OK", 3000);
+        if (!at("AT+HTTPINIT", "OK", 10000)) return false;
+        at("AT+CSSLCFG=\"sslversion\",0,3", "OK", 3000);
+        at("AT+CSSLCFG=\"enableSNI\",0,1", "OK", 3000);
+
+        char para[192];
+        snprintf(para, sizeof(para), "AT+HTTPPARA=\"URL\",\"%s\"", url);
+        if (!at(para, "OK", 5000)) {
+            httpSessionClose();
+            return false;
+        }
+        at("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK", 3000);
+        if (hdr[0]) {
+            char ud[256];
+            snprintf(ud, sizeof(ud), "AT+HTTPPARA=\"USERDATA\",\"%s\"", hdr);
+            at(ud, "OK", 3000);
+        }
+
+        strncpy(_httpSessionUrl, url, sizeof(_httpSessionUrl) - 1);
+        strncpy(_httpSessionHeaders, hdr, sizeof(_httpSessionHeaders) - 1);
+        _httpSessionOpen = true;
+        _httpSessionLastMs = millis();
+        Serial.println("A7670: HTTP keep-alive session open");
+        return true;
+#endif
     }
 };
 

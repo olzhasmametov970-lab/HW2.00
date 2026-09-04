@@ -1,22 +1,17 @@
 """
-HYDROWIN backend — main.py (ПОЛНОСТЬЮ ИСПРАВЛЕННАЯ ВЕРСИЯ)
+HydroWin backend — FastAPI entrypoint.
 
-Что изменено:
-1. Исправлена критическая ошибка двойной инициализации app = FastAPI(), из-за которой слетали роутеры (404 Not Found).
-2. Логика запуска таблиц, проверки датчиков и фонового воркера объединена в единый современный lifespan.
-3. Очищены дублирующиеся импорты.
+Lifespan: schema/indexes, seed, MQTT (optional), readings purge.
+Telemetry: HTTPS POST /v1/ingest/telemetry (X-Device-Key).
 """
 
 import asyncio
 import contextlib
-import json
 import os
-import uuid
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 
-import websockets
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import case, desc, func
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -28,7 +23,7 @@ from app.config import settings
 from app.database import SessionLocal, engine, get_db
 from app.db_indexes import apply_performance_indexes
 from app.deps import require_admin, require_staff
-from app.models import Base, Device, Machine, Organization, Reading, ReadingDaily, ReadingHourly, Sensor, User
+from app.models import Base, Device, Machine, Reading, ReadingDaily, ReadingHourly, Sensor, User
 from app.org_access import can_view_machine, can_write_machine
 from app.routers import (
     audit,
@@ -44,146 +39,21 @@ from app.routers import (
 from app.schema_migrate import apply_org_schema
 from app.mqtt_worker import start_mqtt_worker, stop_mqtt_worker
 from app.ops_metrics import ingest_metrics_snapshot, system_metrics_snapshot
-from app.runtime_accumulator import accumulate_runtime
-from app.live_telemetry import apply_sensor_live
-from app.security import evaluate_status, hash_device_key, headline_for_status, worst_status
+from app.security import hash_device_key
 from app.security_middleware import SecurityHeadersMiddleware
-from app.seed import ensure_default_users, ensure_multi_org_demo, ensure_platform_org
+from app.seed import (
+    ensure_default_users,
+    ensure_multi_org_demo,
+    ensure_platform_org,
+    rotate_known_demo_passwords_if_production,
+)
 from app.sensor_service import (
     dedupe_sensors_for_machine,
     ensure_BLOCK_machine,
     ensure_machine_sensors,
-    ensure_sensor_for_telemetry_key,
-    BLOCK_ip,
-    resolve_machine_by_location,
 )
 
 MACHINE_CODE = os.environ.get("MACHINE_CODE", "1783422691603")
-
-# ─── Конфигурация BLOCK через переменную окружения ───────────────────────────
-# На проде: BLOCK_WS_ENABLED=false — данные идут через
-# HTTP POST /v1/ingest/telemetry с блока, WebSocket-воркер не нужен.
-BLOCK_WS_URL = os.environ.get("BLOCK_WS_URL", "ws://192.168.1.34:81")
-BLOCK_WS_ENABLED = os.environ.get("BLOCK_WS_ENABLED", "false").lower() in (
-    "1",
-    "true",
-    "yes",
-)
-
-
-# =============================================================================
-# Фоновый воркер WebSocket
-# =============================================================================
-async def BLOCK_websocket_worker():
-    print(f"=== Фоновый воркер блока запущен, подключаемся к {BLOCK_WS_URL} ===")
-
-    while True:
-        try:
-            async with websockets.connect(BLOCK_WS_URL, timeout=5) as ws:
-                print(f"✅ Подключились к блоку: {BLOCK_WS_URL}")
-
-                async for message in ws:
-                    now = datetime.utcnow()
-                    db  = SessionLocal()
-                    try:
-                        incoming_data = json.loads(message)
-                        print(f"Получено: {incoming_data}")
-
-                        machine = resolve_machine_by_location(db, BLOCK_ip())
-                        if machine is None:
-                            machine = ensure_BLOCK_machine(db)
-                            print(
-                                f"✅ Авто-создана/восстановлена машина "
-                                f"(code={MACHINE_CODE}, ip={BLOCK_ip()})"
-                            )
-
-                        # Статусы всех каналов из этого пакета — статус машины
-                        # выставляется как наихудший (ok < warning < critical),
-                        # а не хардкодом "online" (которого нет в MachineStatus
-                        # на клиенте, из-за чего парк всегда считался офлайн).
-                        packet_statuses: list[str] = []
-                        alert_headlines: list[tuple[str, str]] = []
-                        pressure_value: float | None = None
-                        temperature_value: float | None = None
-                        pressure_sensor = None
-                        temperature_sensor = None
-
-                        for key, raw_value in incoming_data.items():
-                            try:
-                                value = float(raw_value)
-                            except (ValueError, TypeError):
-                                continue
-
-                            clean_key = key.lower().strip()
-                            sensor = ensure_sensor_for_telemetry_key(
-                                db, machine, clean_key
-                            )
-                            if sensor is None:
-                                print(f"⚠️  Неизвестный ключ '{clean_key}', пропускаем")
-                                continue
-
-                            if sensor.type == "pressure" or sensor.channel_index == 0:
-                                pressure_value = value
-                                pressure_sensor = sensor
-                            elif (
-                                sensor.type == "temperature"
-                                or sensor.channel_index == 1
-                            ):
-                                temperature_value = value
-                                temperature_sensor = sensor
-
-                            status = evaluate_status(value, sensor)
-                            packet_statuses.append(status)
-                            db.add(
-                                Reading(
-                                    machine_id=machine.id,
-                                    sensor_id=sensor.id,
-                                    ts=now,
-                                    value=value,
-                                    status=status,
-                                )
-                            )
-                            apply_sensor_live(
-                                sensor, value=value, ts=now, status=status
-                            )
-                            if status in ("warning", "critical"):
-                                label = (
-                                    "критическое значение"
-                                    if status == "critical"
-                                    else "предупреждение"
-                                )
-                                msg = f"{sensor.name}: {label} {value} {sensor.unit}"
-                                alert_headlines.append((status, msg))
-
-                        accumulate_runtime(
-                            machine,
-                            now,
-                            pressure=pressure_value,
-                            temperature=temperature_value,
-                            pressure_ok=True,
-                            pressure_sensor=pressure_sensor,
-                            temperature_sensor=temperature_sensor,
-                        )
-
-                        if packet_statuses:
-                            machine.status = worst_status(packet_statuses)
-                            machine.last_seen_at = now
-                            machine.headline_alert = headline_for_status(
-                                machine.status, alert_headlines
-                            )
-
-                        db.commit()
-                        print("✅ Данные записаны")
-
-                    except Exception as db_err:
-                        db.rollback()
-                        print(f"❌ Ошибка записи: {db_err}")
-                    finally:
-                        db.close()
-
-        except Exception as ws_err:
-            print(f"⚠️  Потеря связи с блоком ({ws_err}). Переподключение через 5 сек...")
-            await asyncio.sleep(5)
 
 
 async def _readings_purge_loop() -> None:
@@ -210,19 +80,14 @@ async def _readings_purge_loop() -> None:
             db.close()
 
 
-# =============================================================================
-# Современный Lifespan (Управление жизненным циклом приложения)
-# =============================================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     purge_task: asyncio.Task | None = None
-    # --- Выполняется при СТАРТЕ приложения ---
     settings.assert_secure_secrets()
     print("Синхронизация таблиц с PostgreSQL...")
     try:
         Base.metadata.create_all(bind=engine)
     except (IntegrityError, OperationalError) as ddl_err:
-        # Редко при гонке workers; таблица уже есть — продолжаем.
         print(f"⚠️  create_all (уже есть / гонка): {ddl_err.orig}")
     try:
         org_cols = apply_org_schema(engine)
@@ -238,13 +103,12 @@ async def lifespan(app: FastAPI):
 
     db = SessionLocal()
     try:
-        # Платформа (admin). Демо-парк производителей — только development.
         ensure_platform_org(db)
         if not settings.is_production:
             ensure_multi_org_demo(db)
         ensure_default_users(db)
+        rotate_known_demo_passwords_if_production(db)
 
-        # ── Машина BLOCK (склад / лаб) — не создаём на production ─────────────
         if settings.is_production:
             print("====== PRODUCTION: демо-машины не создаются ======")
             machine = None
@@ -257,9 +121,8 @@ async def lifespan(app: FastAPI):
         db.commit()
 
         if machine is not None:
-            print("====== ДАТЧИКИ СИНХРОНИЗИРОВАНЫ ======")
-            print(f"   Блок URL: {BLOCK_WS_URL}")
-            print(f"   Машина:    {machine.id} / {machine.code} / {machine.location_label}")
+            print("====== ДАТЧИКИ СИНХРОНИЗИРОВАНЫ (lab) ======")
+            print(f"   Машина: {machine.id} / {machine.code} / {machine.location_label}")
             for s in sensors:
                 print(f"   ch{s.channel_index}: {s.id} ({s.name}, {s.type})")
             if merged:
@@ -267,14 +130,7 @@ async def lifespan(app: FastAPI):
         else:
             print("====== ДАТЧИКИ: пропуск (production) ======")
 
-        # WebSocket-воркер — только для лаборатории (ZYXEL 192.168.1.34).
-        # На проде BLOCK_WS_ENABLED=false, блок шлёт HTTP POST на /v1/ingest/telemetry.
-        if BLOCK_WS_ENABLED:
-            asyncio.create_task(BLOCK_websocket_worker())
-            print(f"   WebSocket-воркер: ВКЛ ({BLOCK_WS_URL})")
-        else:
-            print("   WebSocket-воркер: ВЫКЛ (режим ingest / HTTP POST)")
-
+        print("   Ingest: HTTPS POST /v1/ingest/telemetry + X-Device-Key")
         await start_mqtt_worker()
 
         purge_task = asyncio.create_task(_readings_purge_loop())
@@ -292,7 +148,6 @@ async def lifespan(app: FastAPI):
         db.close()
 
     yield
-    # --- Выполняется при ОСТАНОВКЕ приложения ---
     if purge_task is not None:
         purge_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -332,7 +187,7 @@ elif _cors:
     )
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Подключаем роутеры (теперь они точно будут работать!)
+# Подключаем роутеры
 app.include_router(auth.router, prefix="/v1")
 app.include_router(machines.router, prefix="/v1")
 app.include_router(organizations.router, prefix="/v1")
@@ -517,7 +372,6 @@ async def admin_stats(user: User = Depends(require_admin)):
             "total_sensors":   total_sensors,
             "orphan_sensors":  orphan_sensors,
             "orphan_readings": orphan_readings,
-            "block_ws_enabled": BLOCK_WS_ENABLED,
             "last_readings":   last_readings,
         }
     finally:
@@ -555,7 +409,14 @@ async def fix_orphan_readings(user: User = Depends(require_admin)):
         }
     except Exception as e:
         db.rollback()
-        return {"error": str(e)}
+        print(f"fix-orphan-readings error: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "internal",
+                "message": "Ошибка очистки orphan readings",
+            },
+        ) from e
     finally:
         db.close()
 

@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timedelta
 
@@ -24,7 +25,22 @@ def hash_token(token: str) -> str:
 
 
 def hash_device_key(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()
+    """HMAC-SHA256(device_key, jwt_secret) — pepper против offline lookup."""
+    return hmac.new(
+        settings.jwt_secret.encode("utf-8"),
+        key.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def hash_device_key_legacy(key: str) -> str:
+    """Старый unsalted SHA-256 (до pepper). Только для миграции verify."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def device_key_hash_candidates(key: str) -> tuple[str, str]:
+    """(modern, legacy) — сначала ищем modern."""
+    return hash_device_key(key), hash_device_key_legacy(key)
 
 
 def create_access_token(user_id: str, org_id: str, role: str) -> tuple[str, int]:

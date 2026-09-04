@@ -97,10 +97,7 @@ class AuthRepository {
     );
     final remembered = await _tokens.getRememberedCredentials();
     if (remembered != null) {
-      await _tokens.saveRememberedCredentials(
-        email: remembered.email,
-        password: newPassword,
-      );
+      await _tokens.saveRememberedCredentials(email: remembered.email);
     }
   }
 
