@@ -2,6 +2,8 @@
 
 Обзорный разбор логики и алгоритмов (без изменения кода). Общая библиотека — `esp32_ingest/*.h`; скетчи только задают пины / `LINK_MODE` / `SENSOR_TABLE`.
 
+Backend (ingest, runtime, geo): [`../backend/PYTHON_WALKTHROUGH.md`](../backend/PYTHON_WALKTHROUGH.md).
+
 ## Три сборки
 
 | Сборка | Entry | Возможности |
